@@ -1,0 +1,12 @@
+.env
+.venv/
+__pycache__/
+data/
+*.pyc
+playwright-report/
+.build-cache/
+dist/
+node_modules/
+credentials.env
+.env.*
+!.env.example
