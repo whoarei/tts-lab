@@ -193,7 +193,7 @@ async def generate(run: dict):
 
 @app.get("/api/state")
 def state():
-    return {"token": TOKEN, "providers": public_catalog(), "version": "0.2.0", "desktop": DESKTOP}
+    return {"token": TOKEN, "providers": public_catalog(), "version": "0.2.1", "desktop": DESKTOP}
 
 
 @app.post("/api/batches", status_code=202)

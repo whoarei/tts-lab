@@ -1,6 +1,6 @@
 {
-  "version": "0.2.0",
-  "checked_on": "2026-11-09",
+  "version": "0.2.1",
+  "checked_on": "2026-11-10",
   "target": "Windows 10/11 x64 portable folder",
   "build_host": "Linux x86_64",
   "tests_host": "Linux / Python 3.12.14 / Node.js 24.22.1",
@@ -12,17 +12,17 @@
   "checks": {
     "python_unittest": "PASS: 37 tests; providers mocked, offline tone only",
     "desktop_node_tests": "PASS: 8 tests, including real Python launch/auth/offline WAV/persistence/shutdown",
-    "locked_dependency_equivalent_tests": "PASS: all 26 exact versions tested in isolated Linux/Python 3.12; pip check passed",
+    "locked_dependency_equivalent_tests": "NOT RUN for 0.2.1: source requirements tested on Linux; Windows dependency closure is checked by the packaging workflow",
     "javascript_syntax": "PASS: desktop modules and frontend",
-    "runtime_hashes": "PASS: official Electron SHASUMS256 and official python.org release SHA256",
-    "windows_wheel_hashes": "PASS: 26 exact wheel SHA256; dependency closure for Windows cp313",
-    "windows_payload_structure": "PASS: PE x64 executable/native-extension headers and isolated Python import paths",
+    "runtime_hashes": "PENDING at release preparation: packaging workflow verifies locked runtime SHA256",
+    "windows_wheel_hashes": "PENDING at release preparation: packaging workflow verifies all 26 Windows wheel SHA256 and dependency closure",
+    "windows_payload_structure": "PENDING at release preparation: packaging workflow checks x64 PE headers and payload manifest",
     "windows_native_start": "NOT RUN: no Windows host or Wine",
     "electron_gui_and_audio": "NOT RUN: needs native Windows --smoke-test",
-    "windows_ci": "NOT RUN: workflow supplied but not uploaded or triggered",
+    "windows_ci": "PENDING at release preparation: triggered by pushing v0.2.1; see GitHub Actions for final outcome",
     "real_cloud_requests": "NOT RUN: no provider credentials or paid requests used",
     "app_code_signing": "NOT SIGNED: upstream runtime executable bytes unchanged; no separate application signing",
-    "publication": "NOT PUBLISHED externally; delivery archives only"
+    "publication": "PENDING at release preparation: tag workflow publishes ZIP and SHA256 after successful build"
   },
   "release_integrity": "Build script validates final ZIP CRC and all payload hashes, writes BUILD-MANIFEST.json and .zip.sha256 sidecar.",
   "persistent_config": "%LOCALAPPDATA%\\TTS Lab\\credentials.env (plaintext, user-owned)",

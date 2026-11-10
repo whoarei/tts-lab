@@ -8,7 +8,7 @@
 
 ### Windows 桌面版（推荐）
 
-下载 `TTS-Lab-0.2.0-win-x64.zip`，把**整个文件夹完整解压**，双击 `TTS Lab.exe`。无需安装 Python、Node.js 或 WebView2，不需要管理员权限，也不会打开外部浏览器。
+下载 `TTS-Lab-0.2.1-win-x64.zip`，把**整个文件夹完整解压**，双击 `TTS Lab.exe`。无需安装 Python、Node.js 或 WebView2，不需要管理员权限，也不会打开外部浏览器。
 
 - 目标系统为 Windows 10/11 x64。不是 32 位或原生 ARM64 发行版。
 - 这是便携文件夹，不是单文件程序或安装向导。不要只复制 EXE，旁边的资源与 DLL 都需要保留。

@@ -117,7 +117,7 @@ function installMenu() {
       { role: 'zoomIn', label: '放大' }, { role: 'zoomOut', label: '缩小' },
       { role: 'togglefullscreen', label: '全屏' }] },
     { label: '帮助', submenu: [{ label: '关于与配置说明', click: () => dialog.showMessageBox(window, {
-      type: 'info', title: 'TTS Lab 0.2.0', message: 'TTS Lab · 本地语音对比工作台',
+      type: 'info', title: 'TTS Lab 0.2.1', message: 'TTS Lab · 本地语音对比工作台',
       detail: '已内置 Electron、Python 和服务依赖，无需另装 Python。\n\n首次可直接使用离线提示音。真实语音需要你自己的服务凭证和网络，可能收费。\n\n通过“文件 → 编辑 API 凭证”配置，保存后重启。凭证以本机明文文件保存，不在网页中显示，也不会包含在音频导出中。请勿分享配置目录。\n\n数据位置：' + profile + '\n\n此便携版未作应用代码签名；不自动更新或上传数据。',
     }) }] },
   ]));

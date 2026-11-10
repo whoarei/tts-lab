@@ -1,4 +1,4 @@
-TTS Lab 0.2.0 · Windows x64 便携版
+TTS Lab 0.2.1 · Windows x64 便携版
 
 开始使用
 1. 把整个 ZIP 完整解压到一个文件夹。
