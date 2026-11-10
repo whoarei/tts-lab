@@ -18,15 +18,21 @@ with sync_playwright() as p:
     page.on("pageerror",lambda e: errors.append(str(e)))
     page.goto("http://127.0.0.1:8765")
     page.wait_for_selector(".variant")
+    page.click('#open-local-models')
+    page.wait_for_selector('.model-card')
+    assert page.locator('.model-card').count() == 4
+    page.select_option('#local-device', 'cuda')
+    page.select_option('#local-device', 'cpu')
+    page.click('#close-local-models')
     while page.locator(".variant").count() < 2:
         page.click("#add-variant")
     for selector in page.locator(".variant .provider").all():
         selector.select_option("demo")
     page.screenshot(path="/tmp/tts-lab-desktop.png",full_page=True)
     page.click("#generate")
-    page.wait_for_function("document.querySelectorAll('audio').length === 2")
+    page.wait_for_function("() => document.querySelectorAll('audio').length === 2")
     assert page.locator(".result-card").count()==2
-    assert page.locator(".result-card").filter(has_text="测试音").count()==2
+    assert page.locator(".result-card").filter(has_text="提示音").count()==2
     page.locator("audio").first.evaluate("(a)=>a.play()")
     page.wait_for_timeout(600)
     assert page.locator("audio").first.evaluate("(a)=>a.currentTime")>0

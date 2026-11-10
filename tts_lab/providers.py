@@ -75,8 +75,12 @@ def validate_params(provider_id: str, params: dict, text: str | None = None) -> 
             raise ProviderError('Qwen HTTP 接口最多允许 600 字。')
         if provider_id == 'google' and len(text.encode('utf-8')) > 5000:
             raise ProviderError('Google Cloud TTS 文本最多允许 5000 UTF-8 字节。')
+        if provider_id.startswith('local_') and len(text) > 300:
+            raise ProviderError('本地模型单次最多允许 300 字，请缩短文本后生成。')
     if provider_id == 'openai' and clean['instructions'] and not clean['model'].startswith('gpt-4o-mini-tts'):
         raise ProviderError('当前适配器仅对 gpt-4o-mini-tts 模型发送风格指令。')
+    if provider_id == 'local_qwen3' and clean['model'] == 'qwen3-0.6b' and clean['instructions']:
+        raise ProviderError('Qwen3-TTS 0.6B 不支持风格指令，请留空或选择 1.7B 模型。')
     return clean
 
 
@@ -169,6 +173,13 @@ async def synthesize(provider_id: str, text: str, params: dict) -> AudioResult:
             n = int(rate * p['duration'])
             pcm = b''.join(struct.pack('<h', int(5000 * math.sin(2 * math.pi * p['frequency'] * i / rate) * min(1, i / 240, (n-i)/240))) for i in range(n))
             result = _audio(_wav(pcm, rate), {'is_demo': True, 'warning': '测试音，不是语音合成'})
+        elif provider_id.startswith('local_'):
+            from .local_models import synthesize_local, LocalModelError
+            try:
+                audio = await synthesize_local(provider_id.removeprefix('local_'), text, p)
+            except LocalModelError as exc:
+                raise ProviderError(str(exc)) from None
+            result = _audio(audio, {'is_local': True, 'model': p['model']})
         elif provider_id == 'polly':
             result = await asyncio.to_thread(_polly, text, p)
         else:

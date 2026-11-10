@@ -55,6 +55,8 @@ jobs:
           cat > release-notes.md <<'NOTES'
           Windows 10/11 x64 portable app. Extract the entire ZIP, then launch TTS Lab.exe. Python and dependencies are bundled.
 
+          Local model configuration supports optional downloads for Kokoro v1.1 INT8, Qwen3-TTS 0.6B/1.7B CustomVoice, and CosyVoice 300M-SFT. Model weights and isolated inference environments are downloaded separately; only models that pass an offline trial generation are marked ready. Start with Kokoro + CPU. See README for hardware requirements and validation limits.
+
           This workflow builds and checks the package integrity only. It does not execute automated application tests or validate Windows startup, audio playback, provider access or quality. Cloud TTS requires credentials and may incur charges. App code is not signed.
           NOTES
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then

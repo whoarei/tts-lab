@@ -67,15 +67,43 @@ CATALOG = [
              field('voice', 'Voice ID', 'Joanna'), field('region', 'AWS region', 'us-east-1'),
              select('engine', '引擎', 'neural', ['standard', 'neural', 'long-form', 'generative']),
              select('sample_rate', '采样率', '24000', ['8000', '16000', '22050', '24000'])]),
+    dict(id='local_kokoro', name='Kokoro · 本地离线', family='local', env=[],
+         description='多语言 INT8 模型；CPU 运行，不发送文本到云端。先在本地模型配置中下载安装。',
+         docs='https://github.com/k2-fsa/sherpa-onnx', fields=[
+             select('model', '本地模型', 'kokoro-v1.1', ['kokoro-v1.1']),
+             num('voice', '音色编号（0–102）', 18, 0, 102, 1), num('speed', '语速', 1, .5, 2)]),
+    dict(id='local_qwen3', name='Qwen3-TTS · 本地离线', family='local', env=[],
+         description='CustomVoice 预置音色；CPU 或 NVIDIA GPU 运行，不使用 DashScope API。',
+         docs='https://github.com/QwenLM/Qwen3-TTS', fields=[
+             select('model', '本地模型', 'qwen3-0.6b', ['qwen3-0.6b', 'qwen3-1.7b']),
+             select('voice', '音色', 'Vivian', ['Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee']),
+             select('language', '语言', 'Chinese', ['Auto', 'Chinese', 'English', 'Japanese', 'Korean', 'German', 'French', 'Russian', 'Portuguese', 'Spanish', 'Italian']),
+             field('instructions', '风格指令（仅 1.7B 模型支持）', '', 'textarea')]),
+    dict(id='local_cosyvoice', name='CosyVoice · 本地离线', family='local', env=[],
+         description='300M-SFT 预置音色；无需参考录音，CPU 或 NVIDIA GPU 运行。',
+         docs='https://github.com/FunAudioLLM/CosyVoice', fields=[
+             select('model', '本地模型', 'cosyvoice-sft', ['cosyvoice-sft']),
+             select('voice', '音色', '中文女', ['中文女', '中文男', '英文女', '英文男', '日语男', '粤语女', '韩语女']),
+             num('speed', '语速', 1, .5, 2)]),
     dict(id='demo', name='离线测试音（非人声）', family='demo', description='仅验证播放、导出与比较流程；不是真实 TTS，不参与最佳语音排行。',
          env=[], fields=[num('frequency', '测试音频率 (Hz)', 440, 180, 1000, 10), num('duration', '时长（秒）', 1.5, .5, 5, .1)])
 ]
 
 
 def public_catalog():
+    from .local_models import list_models
+    local = list_models()
     result = copy.deepcopy(CATALOG)
     for provider in result:
         missing = [key for key in provider['env'] if not os.environ.get(key, '').strip()]
+        if provider['family'] == 'local':
+            installed = [m['id'] for m in local if m['engine'] == provider['id'].removeprefix('local_') and m['ready']]
+            provider['installed_models'] = installed
+            provider['available_models'] = [m['id'] for m in local if m['engine'] == provider['id'].removeprefix('local_')]
+            if installed:
+                provider['fields'][0]['default'] = installed[0]
+            else:
+                missing.append('本地模型配置 → 下载并安装')
         if provider['id'] == 'polly':
             if importlib.util.find_spec('boto3') is None:
                 missing.append('optional dependency: boto3')

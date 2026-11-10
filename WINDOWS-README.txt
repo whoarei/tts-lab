@@ -1,4 +1,4 @@
-TTS Lab 0.2.1 · Windows x64 便携版
+TTS Lab 0.3.0 · Windows x64 便携版
 
 开始使用
 1. 把整个 ZIP 完整解压到一个文件夹。
@@ -46,3 +46,6 @@ $p.ExitCode
 开发者重建：WINDOWS-BUILD.md
 已做/未做检查：VERIFICATION.json
 逐文件哈希：BUILD-MANIFEST.json
+
+本地离线人声（0.3.0）
+从“文件 → 本地模型配置”选择 Kokoro、Qwen3-TTS 或 CosyVoice 模型，点击下载并安装。首次需联网下载独立运行环境和模型，试生成通过后即可离线使用。建议先选 Kokoro + CPU；大型模型需数 GB 空间，GPU 需要兼容驱动。本地生成单次最多 300 字。

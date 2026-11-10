@@ -1,5 +1,5 @@
 {
-  "version": "0.2.1",
+  "version": "0.3.0",
   "checked_on": "2026-11-10",
   "target": "Windows 10/11 x64 portable folder",
   "build_host": "Linux x86_64",
@@ -7,22 +7,28 @@
   "bundled_runtime": {
     "electron": "45.2.3",
     "python": "3.13.17",
-    "python_dependencies": 26
+    "python_dependencies": 27
   },
   "checks": {
-    "python_unittest": "PASS: 37 tests; providers mocked, offline tone only",
-    "desktop_node_tests": "PASS: 8 tests, including real Python launch/auth/offline WAV/persistence/shutdown",
-    "locked_dependency_equivalent_tests": "NOT RUN for 0.2.1: source requirements tested on Linux; Windows dependency closure is checked by the packaging workflow",
-    "javascript_syntax": "PASS: desktop modules and frontend",
+    "python_unittest": "PASS: 56 tests; cloud providers mocked, local download integrity/lifecycle/consent/routing covered",
+    "desktop_node_tests": "PASS: 8 tests including real Python launch/auth/offline WAV/persistence/shutdown",
+    "locked_dependency_equivalent_tests": "NOT RUN for all 27 Windows dependencies: source dependencies tested on Linux; tag packaging checks Windows closure",
+    "javascript_syntax": "PASS: frontend and desktop main",
     "runtime_hashes": "PENDING at release preparation: packaging workflow verifies locked runtime SHA256",
     "windows_wheel_hashes": "PENDING at release preparation: packaging workflow verifies all 26 Windows wheel SHA256 and dependency closure",
     "windows_payload_structure": "PENDING at release preparation: packaging workflow checks x64 PE headers and payload manifest",
     "windows_native_start": "NOT RUN: no Windows host or Wine",
     "electron_gui_and_audio": "NOT RUN: needs native Windows --smoke-test",
-    "windows_ci": "PENDING at release preparation: triggered by pushing v0.2.1; see GitHub Actions for final outcome",
+    "windows_ci": "PENDING at release preparation: triggered by pushing v0.3.0; see GitHub Actions for final outcome",
     "real_cloud_requests": "NOT RUN: no provider credentials or paid requests used",
     "app_code_signing": "NOT SIGNED: upstream runtime executable bytes unchanged; no separate application signing",
-    "publication": "PENDING at release preparation: tag workflow publishes ZIP and SHA256 after successful build"
+    "publication": "PENDING at release preparation: tag workflow publishes ZIP and SHA256 after successful build",
+    "windows_installer_wheel": "PASS: uv Windows wheel SHA256, relocation, executable x64 PE header and embedded installer discovery",
+    "browser_smoke": "PASS on Linux Chromium: configuration list, desktop/mobile, demo playback and exports; real Kokoro generation without cloud consent, playback, scoring, WAV/ZIP exports",
+    "local_kokoro": "PASS on Linux CPU: managed Python/dependencies, verified model download, offline Chinese trial generation and browser end-to-end",
+    "local_qwen3": "PARTIAL: CPU dependencies and official inference module import passed; full weights/inference NOT RUN because Hugging Face access is blocked in this cloud environment",
+    "local_cosyvoice": "PARTIAL: CPU dependencies plus pinned CosyVoice/Matcha inference imports passed; full weights/inference NOT RUN because Hugging Face access is blocked in this cloud environment",
+    "local_gpu": "NOT RUN: no NVIDIA GPU available"
   },
   "release_integrity": "Build script validates final ZIP CRC and all payload hashes, writes BUILD-MANIFEST.json and .zip.sha256 sidecar.",
   "persistent_config": "%LOCALAPPDATA%\\TTS Lab\\credentials.env (plaintext, user-owned)",

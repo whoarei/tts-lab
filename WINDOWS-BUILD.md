@@ -12,7 +12,7 @@ Output: `dist/TTS-Lab-<version>-win-x64.zip` and its SHA256 sidecar. Extract the
 
 - Electron 45.2.3 official Windows x64 archive. Its SHA256 was checked against the release's `SHASUMS256.txt`.
 - Python 3.13.17 official embedded Windows x64 runtime. Its SHA256 was checked against the python.org release page.
-- All Python runtime dependencies, including AWS boto3, are pinned in `requirements-desktop.lock`, with exact wheel filenames and SHA256 values also in `runtime-lock.json`. Only binary Windows cp313 or universal wheels are accepted. Colorama is explicit to avoid cross-platform marker omissions.
+- All Python runtime dependencies (including the uv model-runtime installer), including AWS boto3, are pinned in `requirements-desktop.lock`, with exact wheel filenames and SHA256 values also in `runtime-lock.json`. Only binary Windows cp313 or universal wheels are accepted. Colorama is explicit to avoid cross-platform marker omissions.
 
 `runtime-lock.json` links the official checksum sources. Cached archives and wheels are checked on every build; a mismatch fails closed. No fetched installer or target executable is executed by the packaging script. Dependencies retain their bundled metadata and licenses; Electron and Python licenses remain alongside their runtime files.
 
@@ -25,7 +25,7 @@ Output: `dist/TTS-Lab-<version>-win-x64.zip` and its SHA256 sidecar. Extract the
 - `.env.example` configuration template, not credentials
 - `BUILD-MANIFEST.json` with hashes for every payload file except the manifest itself
 
-The backend source allowlist is exactly `run.py`, `tts_lab/{__init__,app,catalog,providers}.py`, and `tts_lab/static/{app.js,index.html,style.css}`. The build excludes `.env`, user `data`, caches, virtual environments and repository metadata. `botocore/data` is SDK service metadata and must remain included. The Python `_pth` isolates imports from globally installed Python packages. Build caches remain under `.build-cache/`, outside the release ZIP.
+The backend source allowlist is exactly `run.py`, `tts_lab/{__init__,app,catalog,providers,local_models,local_worker}.py`, and `tts_lab/static/{app.js,index.html,style.css}`. The build excludes `.env`, user `data`, caches, virtual environments and repository metadata. `botocore/data` is SDK service metadata and must remain included. The Python `_pth` isolates imports from globally installed Python packages. Build caches remain under `.build-cache/`, outside the release ZIP. Downloaded local models are also excluded; users install them through the app configuration after extraction. The uv Windows executable is retained under `Lib/site-packages/_wheel_data/uv-0.9.9.data/scripts/uv.exe` and is located explicitly by the local model manager.
 
 ## Verification
 

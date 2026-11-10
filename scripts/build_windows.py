@@ -86,7 +86,7 @@ def install_wheel(wheel, site):
 
 
 BACKEND_FILES = (
-    '__init__.py', 'app.py', 'catalog.py', 'providers.py',
+    '__init__.py', 'app.py', 'catalog.py', 'providers.py', 'local_models.py', 'local_worker.py',
     'static/app.js', 'static/index.html', 'static/style.css',
 )
 
@@ -119,7 +119,8 @@ def verify_bundle(bundle, lock):
     required = ['TTS Lab.exe', 'resources/python/python.exe',
                 'resources/python/python313.dll', 'resources/python/python313._pth',
                 'resources/app/main.js', 'resources/app/package.json', 'resources/app/credentials.env.example',
-                'resources/backend/run.py', 'resources/backend/tts_lab/app.py', '.env.example']
+                'resources/backend/run.py', 'resources/backend/tts_lab/app.py',
+                'resources/python/Lib/site-packages/_wheel_data/uv-0.9.9.data/scripts/uv.exe', '.env.example']
     for name in required:
         if not (bundle / name).is_file():
             raise ValueError(f'Missing bundle member: {name}')
@@ -137,7 +138,8 @@ def verify_bundle(bundle, lock):
         # botocore/data is required SDK service metadata, not user data.
         if rel.parts[0] == 'data' or rel.parts[:3] == ('resources', 'backend', 'data'):
             raise ValueError(f'User data in bundle: {rel}')
-    for executable in ['TTS Lab.exe', 'resources/python/python.exe']:
+    for executable in ['TTS Lab.exe', 'resources/python/python.exe',
+                       'resources/python/Lib/site-packages/_wheel_data/uv-0.9.9.data/scripts/uv.exe']:
         verify_pe(bundle / executable)
     site = bundle / 'resources/python/Lib/site-packages'
     installed = {}

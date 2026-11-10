@@ -46,7 +46,9 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict("os.environ", {"OPENAI_API_KEY": "never-return-this-secret"}):
             response = await self.client.get("/api/state")
         self.assertNotIn("never-return-this-secret", response.text)
-        self.assertEqual(len(response.json()["providers"]), 9)
+        ids = {p['id'] for p in response.json()['providers']}
+        self.assertEqual(len(ids), 12)
+        self.assertTrue({'local_kokoro', 'local_qwen3', 'local_cosyvoice'}.issubset(ids))
 
     async def test_demo_end_to_end_audio_zip_csv_history(self):
         response = await self.send({"text": "你好 world", "variants": [

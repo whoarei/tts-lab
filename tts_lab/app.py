@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .catalog import public_catalog, validate_params
 from .providers import ProviderError, synthesize
+from . import local_models
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("TTS_LAB_DATA_DIR", ROOT.parent / "data")).resolve()
@@ -42,6 +43,7 @@ ID = re.compile(r"^[0-9a-f]{32}$")
 @asynccontextmanager
 async def lifespan(application):
     yield
+    await local_models.shutdown()
     pending = list(TASKS)
     for task in pending:
         task.cancel()
@@ -164,7 +166,8 @@ async def generate(run: dict):
         try:
             # Global deadline includes AWS thread wait; no retry after timeouts.
             result = await asyncio.wait_for(
-                synthesize(run["provider"], run["text"], run["params"]), timeout=150)
+                synthesize(run["provider"], run["text"], run["params"]),
+                timeout=1900 if run['provider'].startswith('local_') else 150)
             if not result.audio or len(result.audio) > 20_000_000:
                 raise ProviderError("服务返回空音频或超过 20 MB 上限。")
             if result.extension not in {"wav", "mp3", "ogg", "opus", "flac", "aac"}:
@@ -193,7 +196,7 @@ async def generate(run: dict):
 
 @app.get("/api/state")
 def state():
-    return {"token": TOKEN, "providers": public_catalog(), "version": "0.2.1", "desktop": DESKTOP}
+    return {"token": TOKEN, "providers": public_catalog(), "version": "0.3.0", "desktop": DESKTOP}
 
 
 @app.post("/api/batches", status_code=202)
@@ -209,12 +212,14 @@ async def create_batch(batch: Batch):
         item = catalog.get(variant.provider)
         if not item:
             raise HTTPException(422, "未知服务。")
-        if item["family"] != "demo" and not batch.allow_cloud:
+        if item["family"] not in {"demo", "local"} and not batch.allow_cloud:
             raise HTTPException(422, "请先确认将文本发送给所选服务，且可能产生费用。")
         if not item.get("ready"):
-            raise HTTPException(422, f"{item['name']} 尚未配置，请按说明设置环境变量。")
+            raise HTTPException(422, f"{item['name']} 尚未配置，请先下载本地模型或按说明设置环境变量。")
         try:
             params = validate_params(variant.provider, variant.params, text)
+            if item['family'] == 'local' and params['model'] not in item['installed_models']:
+                raise ProviderError('所选本地模型尚未安装，请在“本地模型配置”中下载。')
         except (ValueError, ProviderError) as exc:
             raise HTTPException(422, str(exc)) from None
         validated.append((variant.provider, item, params))
@@ -234,6 +239,42 @@ async def create_batch(batch: Batch):
         TASKS.add(task)
         task.add_done_callback(TASKS.discard)
     return {"batch_id": batch_id, "runs": runs}
+
+
+class ModelInstall(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    device: str = 'cpu'
+
+
+@app.get('/api/local-models')
+def local_model_list():
+    return {'models': local_models.list_models()}
+
+
+@app.post('/api/local-models/{model_id}/install', status_code=202)
+async def local_model_install(model_id: str, request: ModelInstall):
+    try:
+        return local_models.start_install(model_id, request.device)
+    except local_models.LocalModelError as exc:
+        raise HTTPException(409 if '已有模型' in str(exc) else 422, str(exc)) from None
+
+
+@app.post('/api/local-models/{model_id}/cancel')
+async def local_model_cancel(model_id: str):
+    try:
+        await local_models.cancel_install(model_id)
+        return {'status': 'cancelled'}
+    except local_models.LocalModelError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
+@app.delete('/api/local-models/{model_id}')
+async def local_model_remove(model_id: str):
+    try:
+        await local_models.remove_model(model_id)
+        return {'status': 'removed'}
+    except local_models.LocalModelError as exc:
+        raise HTTPException(409, str(exc)) from None
 
 
 def saved_runs(limit: int | None = 200):
