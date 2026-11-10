@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TTS Lab · 语音对比工作台</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <header><a class="brand" href="/">◒ <span>TTS LAB</span></a><div class="local"><span></span> 本机运行 · 不托管密钥</div><a href="#guide">使用说明 ↗</a></header>
+  <main>
+    <section class="intro"><div class="eyebrow">TEXT TO SPEECH / LISTEN & COMPARE</div><h1>选声音，<br>先听<span>同一段。</span></h1><p>把生成式语音与传统神经 TTS 放在一起。调参数，听差别，再选适合你的声音。</p><div class="pills"><span>同文多引擎</span><span>参数独立可调</span><span>盲听与评分</span><span>音频本地保存</span></div></section>
+    <div class="workspace">
+      <section class="panel input-panel"><div class="section-title"><span class="number">01</span><h2>测试文本</h2><span id="text-count">0 / 2000</span></div>
+        <div class="samples" id="samples"></div>
+        <label class="sr-only" for="text">输入所有引擎共同朗读的文本</label>
+        <textarea id="text" maxlength="2000" rows="8" spellcheck="false" placeholder="输入你真实会用到的文本。所有方案都会朗读这一段。"></textarea>
+        <p class="hint">建议一次 50–300 字，先测试日常场景，再试数字、多音字、中英混读。不会自动改写原文或截断长文本。</p>
+      </section>
+      <aside class="panel guide-panel"><div class="mini-label">HOW TO PICK</div><h2>没有全场景冠军。<br>找到你的最佳。</h2><ol><li><b>固定文本</b><span>每轮使用同样内容，参数逐个调整。</span></li><li><b>先盲听</b><span>不看厂商名称，记录自然度与读音错误。</span></li><li><b>再看取舍</b><span>比较生成耗时、表达能力与实际账单。</span></li></ol><p>生成式 ≠ 一定更好。传统神经语音也可能更稳定、更适合播报。</p></aside>
+    </div>
+    <section class="config-section"><div class="section-title"><span class="number">02</span><h2>对比方案</h2><span>最多 6 组，同一家也能比参数</span><button id="add-variant" class="secondary push">＋ 添加方案</button></div><div id="variants" class="variant-grid"></div></section>
+    <section class="runbar"><div><label class="check"><input id="cloud-consent" type="checkbox">我确认将这段文本发送给所选云服务，了解调用可能收费。</label><p>密钥仅从本机环境变量读取。点击生成才会调用所选服务，不自动重试；无实时价格估算。</p></div><button id="generate" class="primary">生成并对比 <span>↗</span></button></section>
+    <div id="notice" role="status" aria-live="polite" hidden></div>
+    <section id="results-section" class="results-section"><div class="section-title"><span class="number">03</span><h2>听见差别</h2><label class="check push"><input id="blind" type="checkbox" checked> 盲听模式</label><button id="refresh-history" class="secondary">历史记录</button></div><p class="hint" id="blind-hint">盲听会随机排列、隐藏引擎名称与参数。评分后取消勾选即可揭晓；下载和导出会暴露身份。</p><details id="source-panel" hidden><summary>本轮实际朗读原文</summary><p id="source-text"></p></details><div id="results" class="result-grid"><div class="empty"><div>◖◗</div><h3>你的下一款声音，从这里开始。</h3><p>先运行离线演示检查流程，或配置 API Key 后开始真实试听。</p></div></div><div class="exports" id="exports" hidden><a id="download-batch" class="secondary">下载本轮音频 + 配置 ZIP</a><a href="/api/export.csv" class="secondary">导出最近 200 条 CSV</a><span>文本、参数和评分会写入本机 data 文件夹。</span></div></section>
+    <section id="history-panel" class="panel" hidden><div class="section-title"><h2>最近对比</h2><button id="close-history" class="secondary push">关闭</button></div><div id="history"></div></section>
+    <section id="guide" class="panel guide-bottom"><h2>开始前，读这几条</h2><div class="guide-columns"><div><h3>1. 配置一次</h3><p id="config-guide">在项目根目录把 .env.example 复制为 .env，填写你要测的厂商密钥。重启程序。缺少凭证的服务会显示需要的变量名，页面不接受或保存 API Key。</p></div><div><h3>2. 看清参数</h3><p>不同引擎只显示各自支持的参数。音色 ID、模型 ID、地区须与你的账号权限匹配。自然语言风格指令不保证逐字生效。</p></div><div><h3>3. 正确解读结果</h3><p>耗时是完整请求到音频返回的时间，不是首包延迟。并行请求与网络都会影响它。评分是个人主观评价，不是自动客观质量分。</p></div></div><p class="footnote">本工具不会自动购买、克隆声音、分享文本或发布音频。所有云端适配器均须你用自己的账号做首次实测；文档核对与模拟测试不能代替真实 API 验证。默认仅监听 127.0.0.1，不要把端口或 .env 暴露到公网。</p></section>
+  </main>
+  <footer><span>◒ TTS LAB</span><span>先听，再决定。 · v0.2</span></footer>
+</body></html>

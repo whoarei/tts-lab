@@ -1,0 +1,14 @@
+{
+  "name": "tts-lab-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Local TTS comparison desktop application",
+  "main": "desktop/main.js",
+  "scripts": {
+    "test": "node --test desktop/*.test.js",
+    "start": "electron .",
+    "build:win": "python scripts/build_windows.py"
+  },
+  "devDependencies": { "electron": "45.2.3" },
+  "engines": { "node": ">=22" }
+}

@@ -4,6 +4,7 @@ __pycache__/
 data/
 *.pyc
 playwright-report/
+
 .build-cache/
 dist/
 node_modules/
