@@ -99,7 +99,7 @@ Section "TTS Lab（必选）" MainSection
   copy_payload:
   SetOutPath "$INSTDIR"
   ClearErrors
-  File /r "${BUNDLE_DIR}/*"
+  File /r "${BUNDLE_FILES}"
   IfErrors 0 write_registration
     MessageBox MB_OK|MB_ICONSTOP "应用文件复制失败，请检查磁盘空间与目录权限后重新安装。" /SD IDOK
     SetErrorLevel 1

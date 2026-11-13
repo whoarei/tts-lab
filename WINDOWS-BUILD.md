@@ -52,6 +52,6 @@ Cross-building does **not** test native Windows install/uninstall, upgrade, laun
 
 ## GitHub Actions
 
-The workflow runs only manually (`workflow_dispatch`) or when pushing a `v*` tag. Ordinary commits and pull requests do not trigger it. It installs NSIS 3.11 and builds both distributions. It performs the packaging script's integrity checks; application tests and native smoke tests are run separately.
+The workflow runs only manually (`workflow_dispatch`) or when pushing a `v*` tag. Ordinary commits and pull requests do not trigger it. It installs NSIS 3.11 and builds both distributions. It runs the six installer regression checks, including real NSIS compilation with native paths, followed by the packaging script's integrity checks; application tests and native smoke tests are run separately.
 
 Manual runs upload the setup EXE, portable ZIP, and both SHA256 files as an Actions artifact (30-day retention); they do not publish a Release. Tag runs require the tag to match `v` plus `package.json` version, then publish these four files as a GitHub Release. Re-running an existing tag replaces its release assets. Only the release job receives `contents: write`; no provider secrets are used. This file describes the configured workflow, not evidence that a remote run has passed.

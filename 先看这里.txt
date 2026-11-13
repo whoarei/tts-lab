@@ -1,7 +1,7 @@
-TTS Lab 0.4.0 · Windows 使用说明
+TTS Lab 0.4.1 · Windows 使用说明
 
 安装与启动
-- 安装版：运行 TTS-Lab-0.4.0-win-x64-setup.exe，按提示安装，从开始菜单打开。
+- 安装版：运行 TTS-Lab-0.4.1-win-x64-setup.exe，按提示安装，从开始菜单打开。
   默认安装到当前用户目录，无需管理员权限。
 - 便携版：完整解压 ZIP，双击 TTS Lab.exe。请保留旁边的全部文件。
 - 支持 Windows 10 / 11 x64，无需另装 Python、Node.js 或 WebView2。

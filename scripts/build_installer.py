@@ -33,6 +33,22 @@ def nsis_source_path(value):
     return value
 
 
+def installer_script(bundle, compiled, cleanup, version, kilobytes):
+    definitions = {
+        'APP_VERSION': version,
+        'WINDOWS_VERSION': version + '.0',
+        # NSIS on Windows does not accept a wildcard appended with a POSIX slash
+        # to an otherwise native path. Join before converting the path to text.
+        'BUNDLE_FILES': bundle / '*',
+        'INSTALLER_PATH': compiled,
+        'UNINSTALL_PAYLOAD': cleanup,
+        'INSTALLED_KB': kilobytes,
+    }
+    return ('\n'.join(f'!define {key} "{nsis_source_path(value)}"'
+                      for key, value in definitions.items()) + '\n' +
+            f'!include "{nsis_source_path(ROOT / "scripts/windows-installer.nsi")}"\n')
+
+
 def payload_commands(bundle):
     """Uninstall only the exact packaged files, never arbitrary user files."""
     files, directories = [], []
@@ -103,17 +119,7 @@ def build_installer(bundle, output, compiler=None):
         cleanup = folder / 'uninstall-payload.nsh'
         cleanup.write_text(payload_commands(bundle), encoding='utf-8')
         script = folder / 'installer.nsi'
-        definitions = {
-            'APP_VERSION': version,
-            'WINDOWS_VERSION': version + '.0',
-            'BUNDLE_DIR': bundle,
-            'INSTALLER_PATH': compiled,
-            'UNINSTALL_PAYLOAD': cleanup,
-            'INSTALLED_KB': kilobytes,
-        }
-        script.write_text('\n'.join(f'!define {key} "{nsis_source_path(value)}"'
-                                    for key, value in definitions.items()) + '\n' +
-                          f'!include "{nsis_source_path(ROOT / "scripts/windows-installer.nsi")}"\n',
+        script.write_text(installer_script(bundle, compiled, cleanup, version, kilobytes),
                           encoding='utf-8')
         subprocess.run([compiler, '-WX', '-V2', '-INPUTCHARSET', 'UTF8', str(script)], check=True)
         verify_installer(compiled)

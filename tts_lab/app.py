@@ -197,7 +197,7 @@ async def generate(run: dict):
 
 @app.get("/api/state")
 def state():
-    return {"token": TOKEN, "providers": public_catalog(), "version": "0.4.0", "desktop": DESKTOP}
+    return {"token": TOKEN, "providers": public_catalog(), "version": "0.4.1", "desktop": DESKTOP}
 
 
 class SavedVariant(Variant):

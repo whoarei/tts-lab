@@ -25,6 +25,8 @@ jobs:
           python -c "import json,os; v=json.load(open('package.json'))['version']; assert os.environ['REF_TYPE'] != 'tag' or os.environ['REF_NAME'] == 'v'+v, 'Tag must match package.json version'"
       - name: Install NSIS compiler
         run: choco install nsis --version=3.11 --no-progress -y
+      - name: Check installer compiler paths
+        run: python -m unittest discover -s tests -p test_installer.py -v
       - name: Build hash-locked installer and portable ZIP
         run: python scripts/build_windows.py --installer
       - uses: actions/upload-artifact@v4
@@ -57,6 +59,7 @@ jobs:
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
           本次更新：
+          - 修复 Windows NSIS 构建的路径分隔符兼容问题。
           - 自绘标题栏，支持最小化、最大化、还原和关闭，移除原生菜单。
           - 左侧独立页面：文本测试、方案对比、模型配置。
           - 方案支持命名、本机保存和重复使用；文本测试可选择一个已保存方案单独生成。
@@ -69,7 +72,7 @@ jobs:
           - 两种版本均已包含 Python 和应用依赖；本地人声模型按需另行下载。
           - exe.sha256 / zip.sha256：对应下载文件的 SHA256 校验值。
 
-          验证：本地 Linux 上通过 63 项 Python 测试、8 项桌面逻辑测试，以及浏览器和 Electron 离线冒烟；发布工作流在 Windows 构建并检查包完整性。Windows 原生应用启动、音频播放、安装/升级/卸载体验和真实云端调用尚未实机验证。离线测试音只是提示音，不朗读文本；云服务需自备凭证，可能收费。应用未做代码签名。
+          验证：本地 Linux 上通过 65 项 Python 测试、8 项桌面逻辑测试，以及浏览器和 Electron 离线冒烟；发布工作流在 Windows 运行 6 项安装器回归检查，构建并检查包完整性。Windows 原生应用启动、音频播放、安装/升级/卸载体验和真实云端调用尚未实机验证。离线测试音只是提示音，不朗读文本；云服务需自备凭证，可能收费。应用未做代码签名。
           NOTES
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" dist/*.zip dist/*-setup.exe dist/*.sha256 --clobber

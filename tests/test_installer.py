@@ -1,10 +1,14 @@
-"""Installer cleanup boundaries and literal-path handling; no Windows execution."""
-from pathlib import Path
+"""Installer path/cleanup boundaries and optional native NSIS compilation."""
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import os
+import subprocess
 import tempfile
 import unittest
 
-from scripts.build_installer import nsis_quote, nsis_source_path, payload_commands
+from scripts.build_installer import (
+    find_makensis, installer_script, nsis_quote, nsis_source_path,
+    payload_commands, verify_installer,
+)
 
 
 class InstallerTests(unittest.TestCase):
@@ -51,6 +55,43 @@ class InstallerTests(unittest.TestCase):
         for invalid in ('x\nFile x', 'x\rFile x', 'x\0y', 'x"y', '${APP_VERSION}'):
             with self.assertRaises(ValueError):
                 nsis_source_path(invalid)
+
+    def test_generated_script_uses_native_windows_and_posix_payload_patterns(self):
+        cases = (
+            (PureWindowsPath(r'D:\a\测试 $TEMP with spaces'),
+             r'D:\a\测试 $TEMP with spaces\bundle\*'),
+            (PurePosixPath('/tmp/测试 $TEMP with spaces'),
+             '/tmp/测试 $TEMP with spaces/bundle/*'),
+        )
+        for folder, expected in cases:
+            with self.subTest(platform=type(folder).__name__):
+                script = installer_script(folder / 'bundle', folder / 'setup.exe',
+                                          folder / 'cleanup.nsh', '1.2.3', 1)
+                self.assertIn(f'!define BUNDLE_FILES "{expected}"\n', script)
+                self.assertIn(f'!define INSTALLER_PATH "{folder / "setup.exe"}"\n', script)
+                self.assertIn(f'!define UNINSTALL_PAYLOAD "{folder / "cleanup.nsh"}"\n', script)
+
+    def test_native_nsis_compiles_payload_with_spaces_unicode_and_dollars(self):
+        try:
+            compiler = find_makensis()
+        except RuntimeError:
+            self.skipTest('NSIS compiler is not installed')
+        with tempfile.TemporaryDirectory(prefix='tts nsis 测试 $TEMP ') as temporary:
+            folder = Path(temporary)
+            bundle = folder / 'bundle'
+            (bundle / 'resources/app').mkdir(parents=True)
+            (bundle / 'TTS Lab.exe').write_bytes(b'fixture')
+            (bundle / 'resources/app/测试 $file.txt').write_text('fixture', encoding='utf-8')
+            cleanup, script, compiled = (folder / 'cleanup.nsh', folder / 'installer.nsi',
+                                         folder / 'TTS-Lab-1.2.3-win-x64-setup.exe')
+            cleanup.write_text(payload_commands(bundle), encoding='utf-8')
+            script.write_text(installer_script(bundle, compiled, cleanup, '1.2.3', 1),
+                              encoding='utf-8')
+            result = subprocess.run([compiler, '-WX', '-V2', '-INPUTCHARSET', 'UTF8', str(script)],
+                                    capture_output=True, text=True, encoding='utf-8',
+                                    errors='replace', timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            verify_installer(compiled)
 
 
 if __name__ == '__main__':
