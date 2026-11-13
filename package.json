@@ -1,6 +1,6 @@
 {
   "name": "tts-lab-desktop",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "description": "Local TTS comparison desktop application",
   "main": "desktop/main.js",

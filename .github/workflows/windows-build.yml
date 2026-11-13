@@ -29,6 +29,34 @@ jobs:
         run: python -m unittest discover -s tests -p test_installer.py -v
       - name: Build hash-locked installer and portable ZIP
         run: python scripts/build_windows.py --installer
+      - name: Check bundled Python backend and offline audio
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+          TTS_LAB_DESKTOP: '0'
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $bundle = Join-Path (Get-Location) "dist/TTS-Lab-$version-win-x64"
+          $env:TTS_LAB_DATA_DIR = Join-Path $env:RUNNER_TEMP "tts-lab-backend-check/data"
+          $env:TTS_LAB_MODELS_DIR = Join-Path $env:RUNNER_TEMP "tts-lab-backend-check/models"
+          $code = @'
+          import asyncio, io, sys, wave
+          from pathlib import Path
+          from tts_lab import app, reference_audio
+          from tts_lab.providers import _wav, synthesize
+          state = app.state()
+          assert app.ROOT.resolve() == (Path(sys.argv[2]) / 'resources/backend/tts_lab').resolve()
+          assert state['version'] == sys.argv[1], state['version']
+          assert {'mimo', 'doubao', 'stepfun', 'fish', 'local_indextts', 'local_glmtts'} <= {item['id'] for item in state['providers']}
+          audio = asyncio.run(synthesize('demo', 'offline Windows backend check', {}))
+          with wave.open(io.BytesIO(audio.audio), 'rb') as reader:
+              assert reader.getnframes() > 0 and reader.getsampwidth() == 2
+          ref = reference_audio.save(_wav(b'\x00\x01' * 72000), 'reference.wav')
+          assert reference_audio.info(ref['id'])['sha256'] == ref['sha256']
+          print('Bundled Windows Python backend, demo WAV and private reference storage passed.')
+          '@
+          & "$bundle/resources/python/python.exe" -c $code $version $bundle
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
           name: TTS-Lab-Windows-x64
@@ -59,20 +87,20 @@ jobs:
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
           本次更新：
-          - 修复 Windows NSIS 构建的路径分隔符兼容问题。
-          - 自绘标题栏，支持最小化、最大化、还原和关闭，移除原生菜单。
-          - 左侧独立页面：文本测试、方案对比、模型配置。
-          - 方案支持命名、本机保存和重复使用；文本测试可选择一个已保存方案单独生成。
-          - 简化界面和使用说明，集中管理本地模型与云服务凭证入口。
-          - 新增 Windows 安装版，提供开始菜单、可选桌面快捷方式和卸载入口；升级和卸载保留个人配置、方案、模型和历史音频。
+          - 新增小米 MiMo-V2.5-TTS / VoiceDesign、字节豆包 Seed-TTS 2.0 / 已有 ICL 2.0 音色、StepAudio 3 / 2.5 和 Fish Audio 官方云 API。
+          - 新增 IndexTTS-2 本地 CPU / NVIDIA GPU 与 GLM-TTS 本地 NVIDIA GPU 接入，支持按需下载、文件校验和安装试生成。
+          - 支持本机参考 WAV 导入、试听及保存到方案；GLM 需要准确逐字稿。参考录音不发送云端，导出配置保留录音 SHA256。
+          - 保留文本测试、方案对比、模型配置三页、方案保存和 Windows 安装器功能。
+          - 补全 Windows 发行包的参考录音模块，并增加独立导入检查，避免源码可用但打包遗漏模块。
 
           下载与安装：
           - setup.exe：Windows 10/11 x64 当前用户安装，无需管理员权限。
           - win-x64.zip：完整解压后运行 TTS Lab.exe，保留旁边所有文件。
-          - 两种版本均已包含 Python 和应用依赖；本地人声模型按需另行下载。
+          - 两种版本均包含 Python 和应用依赖；本地人声模型与推理环境按需另行下载，升级保留个人配置和历史。
           - exe.sha256 / zip.sha256：对应下载文件的 SHA256 校验值。
+          - 新增云服务需在本机凭证文件填写对应 Key；Fish 还需声音模型 ID，接入的是托管 API，未包含本地 Fish Speech 权重。
 
-          验证：本地 Linux 上通过 65 项 Python 测试、8 项桌面逻辑测试，以及浏览器和 Electron 离线冒烟；发布工作流在 Windows 运行 6 项安装器回归检查，构建并检查包完整性。Windows 原生应用启动、音频播放、安装/升级/卸载体验和真实云端调用尚未实机验证。离线测试音只是提示音，不朗读文本；云服务需自备凭证，可能收费。应用未做代码签名。
+          验证：发布前执行 Python / Node 检查及浏览器流程测试；IndexTTS 已在 Linux CPU 通过完整安装和应用 API 生成验证。Windows 工作流执行安装器回归、锁定依赖和包完整性校验，并使用包内 Python 验证后端导入、离线 WAV 和参考录音存储。GLM 完整 GPU 推理、Windows 桌面 GUI/声音播放/安装升级卸载体验，以及真实云端调用尚未实机验证。云端调用可能收费；离线测试音不是人声。应用未做代码签名。
           NOTES
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" dist/*.zip dist/*-setup.exe dist/*.sha256 --clobber

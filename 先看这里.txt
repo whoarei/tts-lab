@@ -1,7 +1,7 @@
-TTS Lab 0.4.1 · Windows 使用说明
+TTS Lab 0.5.0 · Windows 使用说明
 
 安装与启动
-- 安装版：运行 TTS-Lab-0.4.1-win-x64-setup.exe，按提示安装，从开始菜单打开。
+- 安装版：运行 TTS-Lab-0.5.0-win-x64-setup.exe，按提示安装，从开始菜单打开。
   默认安装到当前用户目录，无需管理员权限。
 - 便携版：完整解压 ZIP，双击 TTS Lab.exe。请保留旁边的全部文件。
 - 支持 Windows 10 / 11 x64，无需另装 Python、Node.js 或 WebView2。
@@ -21,12 +21,18 @@ TTS Lab 0.4.1 · Windows 使用说明
 3. 在“文本测试”选择方案，输入文字后生成。
 首次下载需要联网；之后生成时文字留在本机，无需 API Key，每次最多 300 字。
 Qwen3-TTS 和 CosyVoice 需要更多空间与内存，CPU 生成可能较慢。
+新增 IndexTTS-2（CPU / NVIDIA GPU）和 GLM-TTS（需要 NVIDIA GPU）。
+在“方案对比”导入你有权使用的 3–10 秒 16-bit PCM WAV；GLM 还需准确逐字稿。
+录音保存在本机。IndexTTS 已在 Linux CPU 实测生成；GLM 完整 GPU 推理尚未实测。
 
 云服务
 1. 打开“模型配置”，点击“编辑 API 凭证”，填写自己的服务 Key 并保存。
 2. 点击“重启并载入凭证”。
 3. 在“方案对比”选择服务和账号支持的模型、音色，命名并保存方案。
 4. 在“文本测试”选择方案，输入文字，确认云端调用后生成。
+新增小米 MiMo、字节豆包 / Seed TTS、StepAudio 和 Fish Audio 官方云接口。
+已有凭证文件可手动追加 MIMO_API_KEY、VOLCENGINE_TTS_API_KEY、STEP_API_KEY、FISH_AUDIO_API_KEY。
+Fish 还需要声音模型 ID；本次未提供 Fish Speech 本地权重。
 云端调用会发送文字和参数，可能收费。显示已配置不等于 Key、余额和权限已验证。
 不要分享凭证，不要提交不适合外传的文本。失败或超时后先核对服务状态再重试。
 

@@ -198,7 +198,7 @@ async def generate(run: dict):
 
 @app.get("/api/state")
 def state():
-    return {"token": TOKEN, "providers": public_catalog(), "references": reference_audio.list_references(), "version": "0.4.1", "desktop": DESKTOP}
+    return {"token": TOKEN, "providers": public_catalog(), "references": reference_audio.list_references(), "version": "0.5.0", "desktop": DESKTOP}
 
 
 @app.post('/api/references', status_code=201)

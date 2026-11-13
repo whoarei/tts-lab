@@ -36,7 +36,7 @@ python scripts/build_installer.py --bundle dist/TTS-Lab-<version>-win-x64
 - `.env.example` configuration template, not credentials
 - `BUILD-MANIFEST.json` with hashes for every payload file except the manifest itself
 
-The backend source allowlist is exactly `run.py`, `tts_lab/{__init__,app,catalog,providers,local_models,local_worker}.py`, and `tts_lab/static/{app.js,index.html,style.css}`. The build excludes `.env`, user `data`, caches, virtual environments and repository metadata. `botocore/data` is SDK service metadata and must remain included. The Python `_pth` isolates imports from globally installed Python packages. Build caches remain under `.build-cache/`, outside the release ZIP. Downloaded local models are also excluded; users install them through the app configuration after extraction. The uv Windows executable is retained under `Lib/site-packages/_wheel_data/uv-0.9.9.data/scripts/uv.exe` and is located explicitly by the local model manager.
+The backend source allowlist is exactly `run.py`, `tts_lab/{__init__,app,catalog,providers,local_models,local_worker,reference_audio}.py`, and `tts_lab/static/{app.js,index.html,style.css}`. A fresh-interpreter import regression test checks that the copied backend includes every required application module. The build excludes `.env`, user `data`, caches, virtual environments and repository metadata. `botocore/data` is SDK service metadata and must remain included. The Python `_pth` isolates imports from globally installed Python packages. Build caches remain under `.build-cache/`, outside the release ZIP. Downloaded local models are also excluded; users install them through the app configuration after extraction. The uv Windows executable is retained under `Lib/site-packages/_wheel_data/uv-0.9.9.data/scripts/uv.exe` and is located explicitly by the local model manager.
 
 ## Verification
 
@@ -53,5 +53,7 @@ Cross-building does **not** test native Windows install/uninstall, upgrade, laun
 ## GitHub Actions
 
 The workflow runs only manually (`workflow_dispatch`) or when pushing a `v*` tag. Ordinary commits and pull requests do not trigger it. It installs NSIS 3.11 and builds both distributions. It runs the six installer regression checks, including real NSIS compilation with native paths, followed by the packaging script's integrity checks; application tests and native smoke tests are run separately.
+
+After building, the workflow executes the bundled Windows Python itself to check backend imports, provider catalog, demo WAV synthesis and local reference storage. This uses temporary data and no provider keys; it does not launch the desktop GUI or exercise GPU inference.
 
 Manual runs upload the setup EXE, portable ZIP, and both SHA256 files as an Actions artifact (30-day retention); they do not publish a Release. Tag runs require the tag to match `v` plus `package.json` version, then publish these four files as a GitHub Release. Re-running an existing tag replaces its release assets. Only the release job receives `contents: write`; no provider secrets are used. This file describes the configured workflow, not evidence that a remote run has passed.
