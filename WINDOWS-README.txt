@@ -1,12 +1,12 @@
-TTS Lab 0.5.0 · Windows 使用说明
+TTS Lab 0.6.0 · Windows 使用说明
 
-当前源码为 Tauri 2 迁移开发版，尚未发布新版；已发布的 v0.5.0 使用 Electron。
-下述 WebView2 要求适用于 Tauri 源码构建。
+0.6.0 桌面版使用 Tauri 2 和系统 WebView2，Python 与应用依赖仍随包提供。
+升级沿用原有凭证、方案、历史音频和模型目录。
 
 安装与启动
-- 安装版：运行 TTS-Lab-0.5.0-win-x64-setup.exe，按提示安装，从开始菜单打开。
+- 安装版：运行 TTS-Lab-0.6.0-win-x64-setup.exe，按提示安装，从开始菜单打开。
   默认安装到当前用户目录，无需管理员权限。
-- 便携版：完整解压 ZIP，双击 TTS Lab.exe。请保留旁边的全部文件。
+- 便携版：完整解压 TTS-Lab-0.6.0-win-x64.zip，双击 TTS Lab.exe。请保留旁边的全部文件。
 - 支持 Windows 10 / 11 x64，Python 与应用依赖已包含，无需另装 Python 或 Node.js。
 - Tauri 版使用 Microsoft Edge WebView2 Runtime。安装版会检测，缺少时联网安装；
   便携版需要先确保系统已安装运行时。离线电脑请提前准备运行时。
