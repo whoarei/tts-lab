@@ -22,6 +22,26 @@ window.addEventListener('DOMContentLoaded', async () => {
     const state = await (await api('/api/state')).json();
     assert(state.desktop && state.providers.filter(p => p.family !== 'demo').every(p => !p.ready), 'Profile must be isolated');
     checks.push('bundled frontend', 'private native API proxy', 'isolated profile');
+    // Exercise WebView2's binary File request body, not just JSON and GETs.
+    const pcm = new ArrayBuffer(44 + 24000 * 3 * 2), view = new DataView(pcm);
+    const ascii = (offset, value) => Array.from(value).forEach((c, i) => view.setUint8(offset + i, c.charCodeAt(0)));
+    ascii(0, 'RIFF'); view.setUint32(4, pcm.byteLength - 8, true); ascii(8, 'WAVEfmt ');
+    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, 24000, true); view.setUint32(28, 48000, true);
+    view.setUint16(32, 2, true); view.setUint16(34, 16, true); ascii(36, 'data');
+    view.setUint32(40, pcm.byteLength - 44, true);
+    for (let i = 0; i < 72000; i++) view.setInt16(44 + i * 2, Math.sin(i * 2 * Math.PI * 220 / 24000) * 2000, true);
+    const upload = await fetch(window.ttsDesktop.apiUrl('/api/references?name=native-smoke.wav'), {
+      method: 'POST', headers: {'Content-Type': 'audio/wav', 'X-Local-Token': state.token},
+      body: new File([pcm], 'native-smoke.wav', {type: 'audio/wav'}),
+    });
+    assert(upload.status === 201, 'Native reference File upload failed');
+    const ref = await upload.json();
+    const preview = new Audio(window.ttsDesktop.apiUrl(`/api/references/${ref.id}/audio`));
+    preview.preload = 'metadata'; preview.load();
+    await wait(() => preview.readyState >= 1 && preview.duration === 3, 'Reference audio preview failed');
+    assert((await (await api('/api/references/' + ref.id + '/audio')).arrayBuffer()).byteLength === pcm.byteLength, 'Reference payload changed');
+    checks.push('binary reference File upload and audio preview');
     await window.ttsDesktop.toggleMaximize();
     await wait(async () => (await window.ttsDesktop.getWindowState()).maximized, 'Maximize failed');
     await window.ttsDesktop.toggleMaximize();
