@@ -25,7 +25,7 @@ VIAddVersionKey /LANG=2052 "LegalCopyright" "TTS Lab contributors"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\TTS Lab"
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "欢迎安装 TTS Lab"
-!define MUI_WELCOMEPAGE_TEXT "安装后可从开始菜单打开语音测试工作台。$\r$\n$\r$\n仅为当前用户安装，无需管理员权限。Python 与应用依赖已包含在安装包内。$\r$\n$\r$\n请先退出正在运行的 TTS Lab。升级和卸载会保留已保存的方案、凭证、本地模型与历史音频。"
+!define MUI_WELCOMEPAGE_TEXT "安装后可从开始菜单打开语音测试工作台。$\r$\n$\r$\n仅为当前用户安装，无需管理员权限。Python 与应用依赖已包含在安装包内。使用系统 WebView2；缺少时将联网安装 Microsoft WebView2。$\r$\n$\r$\n请先退出正在运行的 TTS Lab。升级和卸载会保留已保存的方案、凭证、本地模型与历史音频。"
 !define MUI_FINISHPAGE_RUN "$INSTDIR\TTS Lab.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "启动 TTS Lab"
 !insertmacro MUI_PAGE_WELCOME
@@ -79,9 +79,54 @@ FunctionEnd
 !insertmacro CHECK_APP_CLOSED ""
 !insertmacro CHECK_APP_CLOSED "un."
 
+; Microsoft documents HKLM's 32-bit EdgeUpdate key and HKCU's per-user key.
+; Check both registry views, then restore the installer's existing 32-bit view.
+!define WEBVIEW2_KEY "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+!macro CHECK_WEBVIEW2_KEY ROOT_KEY VIEW
+  SetRegView ${VIEW}
+  ReadRegStr $1 ${ROOT_KEY} "${WEBVIEW2_KEY}" "pv"
+  ${If} $1 != ""
+  ${AndIf} $1 != "0.0.0.0"
+    StrCpy $0 1
+  ${EndIf}
+!macroend
+
+Function DetectWebView2
+  StrCpy $0 0
+  !insertmacro CHECK_WEBVIEW2_KEY HKCU 32
+  !insertmacro CHECK_WEBVIEW2_KEY HKLM 32
+  !insertmacro CHECK_WEBVIEW2_KEY HKCU 64
+  !insertmacro CHECK_WEBVIEW2_KEY HKLM 64
+  SetRegView 32
+FunctionEnd
+
+Function EnsureWebView2
+  Call DetectWebView2
+  ${If} $0 == 1
+    Return
+  ${EndIf}
+  DetailPrint "缺少 WebView2，正在联网安装 Microsoft WebView2 运行时……"
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  File /oname=MicrosoftEdgeWebview2Setup.exe "${WEBVIEW2_BOOTSTRAPPER}"
+  StrCpy $2 -1
+  ClearErrors
+  ExecWait '"$PLUGINSDIR\MicrosoftEdgeWebview2Setup.exe" /silent /install' $2
+  ; The post-install registry check also covers an interrupted installer or a
+  ; bootstrapper reporting success without making the runtime available.
+  Call DetectWebView2
+  ${If} $0 != 1
+    MessageBox MB_OK|MB_ICONSTOP "WebView2 安装未完成（代码 $2）。请连接网络，或手动安装 Microsoft WebView2 后重试。原应用尚未卸载。" /SD IDOK
+    SetErrorLevel 1
+    Abort
+  ${EndIf}
+FunctionEnd
+
 Section "TTS Lab（必选）" MainSection
   SectionIn RO
   Call CheckAppClosed
+  ; Resolve runtime dependencies before removing the working previous version.
+  Call EnsureWebView2
   ; The old uninstaller removes only its known payload. This also removes files
   ; which disappeared in the newer version, while preserving unrelated files.
   ReadRegStr $1 HKCU "${UNINSTALL_KEY}" "InstallLocation"

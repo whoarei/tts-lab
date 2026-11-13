@@ -20,13 +20,14 @@ const samples = [
 const copy = value => JSON.parse(JSON.stringify(value));
 const provider = id => S.providers.find(item => item.id === id);
 const resultUI = (page, selector) => $(selector, $(`#${page}-results-slot`));
+const apiUrl = path => window.ttsDesktop?.apiUrl ? window.ttsDesktop.apiUrl(path) : path;
 function notice(message, error = false) {
   const box = $('#notice');
   box.textContent = message; box.hidden = !message; box.classList.toggle('error', error);
   if (error) box.scrollIntoView({block: 'nearest', behavior: 'smooth'});
 }
 async function api(path, options = {}) {
-  const response = await fetch(path, {...options, headers: {'Content-Type': 'application/json', 'X-Local-Token': S.token, ...options.headers}});
+  const response = await fetch(apiUrl(path), {...options, headers: {'Content-Type': 'application/json', 'X-Local-Token': S.token, ...options.headers}});
   let data;
   try { data = await response.json(); } catch { throw new Error('服务响应异常，请检查本机程序是否仍在运行。'); }
   if (!response.ok) {
@@ -176,7 +177,7 @@ function renderVariants() {
         label.append(upload, el('small', '仅导入你有权使用的声音，3–10 秒 PCM WAV；录音保存在本机，不上传云端。'));
         if (variant.params[field.key]) {
           const preview = el('audio'); preview.controls = true; preview.preload = 'none';
-          preview.src = `/api/references/${encodeURIComponent(variant.params[field.key])}/audio`;
+          preview.src = apiUrl(`/api/references/${encodeURIComponent(variant.params[field.key])}/audio`);
           label.append(preview);
         }
       }
@@ -232,7 +233,7 @@ function renderResults(page) {
     const status = el('div', stateLabel(run.status), 'status'); status.dataset.state = run.status; card.append(status);
     if (['failed', 'interrupted'].includes(run.status)) card.append(el('p', run.error, 'hint error'));
     if (run.status === 'completed') {
-      const audio = el('audio'); audio.controls = true; audio.preload = 'metadata'; audio.src = `/api/runs/${run.id}/audio`;
+      const audio = el('audio'); audio.controls = true; audio.preload = 'metadata'; audio.src = apiUrl(`/api/runs/${run.id}/audio`);
       audio.onplay = () => document.querySelectorAll('audio').forEach(other => { if (other !== audio) other.pause(); }); card.append(audio);
       if (run.family === 'demo') card.append(el('p', '这是提示音，不朗读文本，不能用于判断语音效果。', 'hint'));
       if (!blind) {
@@ -346,6 +347,7 @@ async function setupDesktop() {
   updateWindowState(await window.ttsDesktop.getWindowState());
 }
 async function init() {
+  window.addEventListener('tts-desktop-error', event => notice(event.detail, true));
   try { await setupDesktop(); } catch { notice('无法读取窗口状态，请稍后重试。', true); }
   for (const button of document.querySelectorAll('.nav-button')) button.onclick = () => setPage(button.dataset.page);
   $('#manage-variants').onclick = () => setPage('compare');

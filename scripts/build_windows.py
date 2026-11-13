@@ -2,7 +2,8 @@
 """Build a Windows x64 portable ZIP and optional per-user NSIS installer.
 
 No target executables are run on a cross-build host. Runtime archives and every
-wheel are SHA256-locked. Requires Python 3.10+ and pip on the build host only.
+wheel are SHA256-locked. The Tauri desktop executable is built separately with
+Cargo. Requires Python 3.10+ and pip on the packaging host.
 """
 from __future__ import annotations
 
@@ -87,7 +88,7 @@ def install_wheel(wheel, site):
 
 BACKEND_FILES = (
     '__init__.py', 'app.py', 'catalog.py', 'providers.py', 'local_models.py', 'local_worker.py', 'reference_audio.py',
-    'static/app.js', 'static/index.html', 'static/style.css',
+    'static/app.js', 'static/desktop.js', 'static/index.html', 'static/style.css',
 )
 
 
@@ -118,13 +119,20 @@ def verify_pe(path):
 def verify_bundle(bundle, lock):
     required = ['TTS Lab.exe', 'resources/python/python.exe',
                 'resources/python/python313.dll', 'resources/python/python313._pth',
-                'resources/app/main.js', 'resources/app/preload.js', 'resources/app/package.json', 'resources/app/credentials.env.example',
+                'resources/app/package.json', 'resources/app/credentials.env.example',
                 'resources/backend/run.py', 'resources/backend/tts_lab/app.py',
                 'resources/python/Lib/site-packages/_wheel_data/uv-0.9.9.data/scripts/uv.exe',
-                '.env.example', 'README.md', 'WINDOWS-BUILD.md', 'api_contracts.md']
+                '.env.example', 'README.md', 'WINDOWS-BUILD.md', 'api_contracts.md', 'THIRD-PARTY-NOTICES.txt']
     for name in required:
         if not (bundle / name).is_file():
             raise ValueError(f'Missing bundle member: {name}')
+    for name in ('resources/app/main.js', 'resources/app/preload.js', 'chrome_100_percent.pak',
+                 'resources.pak', 'icudtl.dat', 'LICENSE.electron.txt'):
+        if (bundle / name).exists():
+            raise ValueError(f'Unexpected Electron payload: {name}')
+    package = json.loads((bundle / 'resources/app/package.json').read_text())
+    if package.get('desktop') != 'tauri':
+        raise ValueError('Desktop metadata must identify the Tauri application')
     backend_root = bundle / 'resources/backend'
     actual_backend = {f.relative_to(backend_root).as_posix() for f in backend_root.rglob('*') if f.is_file()}
     expected_backend = {'run.py'} | {f'tts_lab/{name}' for name in BACKEND_FILES}
@@ -181,11 +189,25 @@ def verify_bundle(bundle, lock):
     return len(installed)
 
 
+def find_desktop_exe(explicit=None):
+    candidates = [Path(explicit)] if explicit else [
+        ROOT / 'src-tauri/target/x86_64-pc-windows-msvc/release/tts-lab.exe',
+        ROOT / 'src-tauri/target/release/tts-lab.exe',
+    ]
+    for candidate in candidates:
+        if candidate.is_file() and not candidate.is_symlink():
+            return candidate.resolve()
+    raise ValueError('Tauri release executable is missing. Run cargo build --release --locked '
+                     '--features custom-protocol --target x86_64-pc-windows-msvc in src-tauri first, or pass --desktop-exe.')
+
+
 def build(args):
     lock = json.loads((ROOT / 'runtime-lock.json').read_text())
     cache = args.cache.resolve()
     cache.mkdir(parents=True, exist_ok=True)
-    archives = {name: download(lock[name], cache) for name in ('electron', 'python')}
+    desktop_exe = find_desktop_exe(args.desktop_exe)
+    verify_pe(desktop_exe)
+    python_archive = download(lock['python'], cache)
     wheels = cache / 'wheels'
     wheels.mkdir(exist_ok=True)
     if any(not (wheels / w['filename']).exists() for w in lock['wheels']):
@@ -202,13 +224,9 @@ def build(args):
     if bundle.exists():
         shutil.rmtree(bundle)
     bundle.mkdir(parents=True)
-    extract(archives['electron'], bundle)
-    (bundle / 'electron.exe').rename(bundle / 'TTS Lab.exe')
-    default = bundle / 'resources/default_app.asar'
-    if default.exists():
-        default.unlink()
+    shutil.copy2(desktop_exe, bundle / 'TTS Lab.exe')
     python = bundle / 'resources/python'
-    extract(archives['python'], python)
+    extract(python_archive, python)
     site = python / 'Lib/site-packages'
     site.mkdir(parents=True)
     for wheel in lock['wheels']:
@@ -220,18 +238,15 @@ def build(args):
     copy_backend(ROOT / 'tts_lab', backend / 'tts_lab')
     app = bundle / 'resources/app'
     app.mkdir(parents=True)
-    for source in (ROOT / 'desktop').glob('*.js'):
-        if not source.name.endswith('.test.js'):
-            shutil.copy2(source, app / source.name)
     shutil.copy2(ROOT / 'desktop/credentials.env.example', app / 'credentials.env.example')
     (app / 'package.json').write_text(json.dumps({'name': package['name'], 'version': version,
-                                                 'main': 'main.js', 'private': True}, indent=2) + '\n')
+                                                 'desktop': 'tauri', 'private': True}, indent=2) + '\n')
     shutil.copy2(ROOT / '.env.example', bundle / '.env.example')
-    for name in ['README.md', 'WINDOWS-BUILD.md', 'api_contracts.md', 'WINDOWS-README.txt', '先看这里.txt', 'VERIFICATION.json', 'runtime-lock.json']:
+    for name in ['README.md', 'WINDOWS-BUILD.md', 'api_contracts.md', 'WINDOWS-README.txt', '先看这里.txt', 'VERIFICATION.json', 'runtime-lock.json', 'THIRD-PARTY-NOTICES.txt']:
         if (ROOT / name).exists():
             shutil.copy2(ROOT / name, bundle / name)
     count = verify_bundle(bundle, lock)
-    manifest = {'target': 'win32-x64', 'version': version, 'runtime': lock,
+    manifest = {'target': 'win32-x64', 'desktop': 'tauri', 'version': version, 'runtime': lock,
                 'verification': {'dependency_distributions': count, 'pe_x64_headers': True,
                                  'native_windows_launch': 'not run by cross-platform build'},
                 'files': [{'path': f.relative_to(bundle).as_posix(), 'sha256': sha256(f)}
@@ -253,12 +268,13 @@ def build(args):
             from .build_installer import build_installer
         except ImportError:
             from build_installer import build_installer
-        build_installer(bundle, args.output, args.makensis)
+        build_installer(bundle, args.output, args.makensis, cache=args.cache)
     print('Windows launch, GUI behavior and live provider calls require separate native testing.')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--desktop-exe', type=Path, help='Release-mode Tauri Windows x64 executable')
     parser.add_argument('--cache', type=Path, default=ROOT / '.build-cache')
     parser.add_argument('--output', type=Path, default=ROOT / 'dist')
     parser.add_argument('--installer', action='store_true', help='Also build a per-user setup EXE (requires NSIS 3)')

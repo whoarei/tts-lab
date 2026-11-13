@@ -1,0 +1,42 @@
+[package]
+name = "tts-lab"
+version = "0.6.0"
+description = "Local TTS comparison desktop application"
+edition = "2021"
+rust-version = "1.90"
+
+[lib]
+name = "tts_lab_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tts-lab"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[features]
+default = ["desktop"]
+desktop = ["dep:tauri", "dep:tauri-plugin-dialog", "dep:tauri-plugin-single-instance", "dep:tauri-build", "dep:open"]
+custom-protocol = ["tauri?/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", optional = true, features = [] }
+
+[dependencies]
+http = "1"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.8"
+tempfile = "3"
+tauri = { version = "=2.12.5", optional = true, features = [] }
+tauri-plugin-dialog = { version = "2", optional = true }
+tauri-plugin-single-instance = { version = "2", optional = true }
+open = { version = "5", optional = true }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+panic = "abort"

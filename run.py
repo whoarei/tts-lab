@@ -66,7 +66,7 @@ class DesktopServer(uvicorn.Server):
         print(json.dumps({"event": "ready", "host": address[0], "port": address[1]}), flush=True)
 
         def listen_for_parent():
-            # EOF also stops an orphan when the Electron parent exits unexpectedly.
+            # EOF also stops an orphan when the desktop parent exits unexpectedly.
             for line in sys.stdin:
                 if line.strip() == "shutdown":
                     break

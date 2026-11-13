@@ -71,6 +71,24 @@ class InstallerTests(unittest.TestCase):
                 self.assertIn(f'!define INSTALLER_PATH "{folder / "setup.exe"}"\n', script)
                 self.assertIn(f'!define UNINSTALL_PAYLOAD "{folder / "cleanup.nsh"}"\n', script)
 
+    def test_webview2_is_ready_before_old_application_is_removed(self):
+        source = (Path(__file__).resolve().parents[1] / 'scripts/windows-installer.nsi').read_text(encoding='utf-8')
+        section = source[source.index('Section "TTS Lab（必选）"'):]
+        self.assertLess(section.index('Call EnsureWebView2'), section.index('Uninstall.exe'))
+        detect = source[source.index('Function DetectWebView2'):source.index('Function EnsureWebView2')]
+        for hive in ('HKCU', 'HKLM'):
+            for view in ('32', '64'):
+                self.assertIn(f'!insertmacro CHECK_WEBVIEW2_KEY {hive} {view}', detect)
+        self.assertIn('SetRegView 32\nFunctionEnd', detect)
+        ensure = source[source.index('Function EnsureWebView2'):source.index('Section "TTS Lab（必选）"')]
+        self.assertIn('"$PLUGINSDIR\\MicrosoftEdgeWebview2Setup.exe" /silent /install', ensure)
+        self.assertIn('SetOutPath "$PLUGINSDIR"\n  File /oname=MicrosoftEdgeWebview2Setup.exe', ensure)
+        self.assertEqual(ensure.count('Call DetectWebView2'), 2)
+        self.assertIn('SetErrorLevel 1\n    Abort', ensure)
+        uninstall = source[source.index('Section "Uninstall"'):]
+        self.assertNotIn('Webview2Setup.exe', uninstall)
+        self.assertNotIn('EdgeUpdate', uninstall)
+
     def test_native_nsis_compiles_payload_with_spaces_unicode_and_dollars(self):
         try:
             compiler = find_makensis()
@@ -85,7 +103,7 @@ class InstallerTests(unittest.TestCase):
             cleanup, script, compiled = (folder / 'cleanup.nsh', folder / 'installer.nsi',
                                          folder / 'TTS-Lab-1.2.3-win-x64-setup.exe')
             cleanup.write_text(payload_commands(bundle), encoding='utf-8')
-            script.write_text(installer_script(bundle, compiled, cleanup, '1.2.3', 1),
+            script.write_text(installer_script(bundle, compiled, cleanup, '1.2.3', 1, bundle / 'TTS Lab.exe'),
                               encoding='utf-8')
             result = subprocess.run([compiler, '-WX', '-V2', '-INPUTCHARSET', 'UTF8', str(script)],
                                     capture_output=True, text=True, encoding='utf-8',

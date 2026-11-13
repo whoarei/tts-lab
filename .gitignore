@@ -9,6 +9,8 @@ playwright-report/
 .build-cache/
 dist/
 node_modules/
+src-tauri/target/
+src-tauri/gen/
 credentials.env
 .env.*
 !.env.example
