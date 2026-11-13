@@ -304,6 +304,12 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             .open(&config)?
             .write_all(include_bytes!("../../desktop/credentials.env.example"))?;
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&profile, fs::Permissions::from_mode(0o700))?;
+        fs::set_permissions(&config, fs::Permissions::from_mode(0o600))?;
+    }
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let resources = env::current_exe()?
         .parent()
@@ -430,15 +436,18 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn run() {
-    let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    // Smoke profiles must not activate or attach to an existing user instance.
+    if !env::args_os().any(|arg| arg == "--smoke-test") {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
             }
-        }))
+        }));
+    }
+    let builder = builder
         .register_asynchronous_uri_scheme_protocol("tts-api", |context, request, responder| {
             if context.webview_label() != "main" {
                 responder.respond(

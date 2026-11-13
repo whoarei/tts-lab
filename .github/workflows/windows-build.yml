@@ -122,6 +122,7 @@ jobs:
             $process.Kill()
             throw "Native desktop smoke test timed out"
           }
+          if (Test-Path $report) { Get-Content $report }
           if ($process.ExitCode -ne 0) { throw "Native desktop smoke failed ($($process.ExitCode))" }
           $result = Get-Content $report -Raw | ConvertFrom-Json
           if ($result.status -ne 'passed') { throw "Desktop smoke report did not pass" }

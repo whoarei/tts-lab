@@ -4,20 +4,20 @@
   "development_status": "Tauri 2 migration in development; version remains 0.5.0; no Tauri release published",
   "target": "Windows 10/11 x64 per-user installer and portable folder",
   "bundled_runtime": {
-    "desktop": "Tauri 2 (system WebView2 on Windows)",
+    "desktop": "Tauri 2.12.5 (system WebView2 on Windows)",
     "python": "3.13.17",
     "python_dependencies": 27,
     "webview2": "Shared Evergreen runtime; portable requires installed runtime; setup embeds a hash-locked Microsoft bootstrapper for online installation when missing"
   },
   "checks": {
-    "python_unittest": "PENDING migration verification; previous Electron release results below are historical",
+    "python_unittest": "PASS: 91/91 application and packaging tests; no skipped checks. Real NSIS 3.11 compilation exercised locally using a user-extracted compiler, including native-path fixtures; this does not establish Windows installation behavior.",
     "desktop_adapter_tests": "PASS: 8 Node adapter tests covering API confinement, fixed controls, listener disposal, native exports, HTTPS documentation, drag behavior and generic error messages",
-    "rust_checks": "PENDING migration compilation and native-layer tests",
-    "javascript_syntax": "PENDING migration verification",
+    "rust_checks": "PASS: 9/9 Rust tests on Linux, including explicit project-Python integration for backend lifetime, desktop authentication, offline WAV, native-proxy Range/206, export and persistence. Native reqwest transport has no TLS dependency and is confined to HTTP loopback.",
+    "javascript_syntax": "PASS: node --check for frontend app.js, desktop.js and native desktop/smoke.js",
     "browser_smoke": "PASS: existing browser-mode smoke and Chromium Tauri-adapter smoke with a mocked native bridge; reference import/preview, actual offline audio playback, WAV/ZIP/CSV export command routing, controls and documents. Mocked transport does not establish native WebView2 protocol/CORS/Range behavior.",
-    "windows_tauri_build": "PENDING migration Windows build",
-    "windows_bundled_backend": "PENDING migration Windows build and bundled-interpreter checks",
-    "windows_desktop_smoke": "PENDING migration native Tauri GUI/audio/protocol/export checks",
+    "windows_tauri_build": "IN PROGRESS: Windows CI run 43362318366; no successful native Tauri build result recorded yet",
+    "windows_bundled_backend": "PENDING: migration Windows CI build and bundled-interpreter checks",
+    "windows_desktop_smoke": "PENDING: real Windows WebView2 Tauri GUI/audio/protocol/export smoke; mock transport and cross-target cargo check are not substitutes",
     "windows_native_install_upgrade_uninstall": "NOT RUN: WebView2 first-install and failure handling, shortcuts, upgrade from Electron with existing data, file-in-use detection, and uninstall data retention require native Windows verification",
     "real_cloud_requests": "NOT RUN: no provider credentials or paid requests used",
     "app_code_signing": "NOT SIGNED: native application and setup are not code signed",
@@ -28,7 +28,8 @@
     "local_cosyvoice": "PREVIOUS partial verification (2026-11-10): CPU dependencies/imports passed; full weights/inference not verified",
     "local_indextts": "PASS in preceding source verification: complete verified weights/aux downloads, installation trial and actual local API generation with reference SHA256; Linux CPU, 3.947-second PCM16 WAV",
     "local_glmtts": "PARTIAL: official source and runtime imports passed; full GPU inference NOT RUN (no NVIDIA GPU)",
-    "local_gpu": "NOT RUN: no NVIDIA GPU available"
+    "local_gpu": "NOT RUN: no NVIDIA GPU available",
+    "windows_msvc_cross_check": "PASS: Windows MSVC target cargo check with custom-protocol on Linux, using user-extracted LLVM 19 resource tooling. This is a cross-target compile check, not a linked or running Windows desktop application."
   },
   "release_integrity": "Build scripts retain locked Python/wheel and WebView2-bootstrapper SHA256 checks, final ZIP CRC and payload manifest hashes; SHA256 sidecars are generated for ZIP and setup EXE. Rust uses Cargo.lock.",
   "persistent_config": "%LOCALAPPDATA%\\TTS Lab\\credentials.env (plaintext, user-owned)",
@@ -83,5 +84,12 @@
       "browser_smoke": "PASS: three pages, reference WAV import, GLM reference/transcript saved and restored after reload, single-vs-comparison payloads, independent results, demo playback, ZIP/history/consent, six local model choices and 320px layout; no JavaScript errors",
       "windows_package": "NOT BUILT OR PUBLISHED: this updates main source without creating a release tag"
     }
-  ]
+  ],
+  "validation_candidate": {
+    "commit": "8cd1a62a97feaebbb1bd58c7fd7279acb2d73776",
+    "scope": "Local migration checks below cover this candidate; subsequent smoke-profile isolation and application-icon source changes require their own verification before completion.",
+    "draft_pr_url": "https://github.com/whoarei/tts-lab/pull/1",
+    "windows_workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43362318366",
+    "windows_workflow_status": "IN PROGRESS: do not treat workflow dispatch or cross-check success as a native build or desktop-smoke pass"
+  }
 }
