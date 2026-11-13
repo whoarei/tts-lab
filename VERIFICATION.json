@@ -1,7 +1,7 @@
 {
-  "version": "0.7.0",
+  "version": "0.8.0",
   "checked_on": "2026-11-13",
-  "development_status": "0.7.0 online-update release preparation; local checks refreshed/in progress, Windows native CI and publication pending. Published v0.6.0 remains unchanged and does not contain online updates.",
+  "development_status": "0.8.0 DeepSeek TTS release preparation; local offline checks passed, Windows native CI and publication/download verification pending. Published 0.7.0/0.6.0 evidence is retained separately.",
   "target": "Windows 10/11 x64 per-user installer and portable folder",
   "bundled_runtime": {
     "desktop": "Tauri 2.12.5 (system WebView2 on Windows)",
@@ -10,33 +10,34 @@
     "webview2": "Shared Evergreen runtime; portable requires installed runtime; setup embeds a hash-locked Microsoft bootstrapper for online installation when missing"
   },
   "checks": {
-    "python_unittest": "PASS: 92/92 Python tests including idle/busy update-activity privacy and desktop authentication; actual local NSIS compilation.",
-    "desktop_adapter_tests": "PASS: 10/10 Node tests for narrow bridge, updater zero-argument commands and sanitized/disposable update events.",
-    "rust_checks": "PASS: 31/31 Rust tests with explicit real Python, including HTTPS/download confinement, portable update/rollback/cancel, missing restart target handling and backend/proxy integration.",
-    "javascript_syntax": "PASS: app.js, desktop.js and native smoke.js syntax.",
-    "browser_smoke": "PASS: normal browser full flow and extended Tauri mocked transport UI; check/download/install states, active-generation/install-first freeze, retry, daily gating and opt-out; no JS errors.",
-    "windows_tauri_build": "PENDING: new Windows online-update candidate compile and locked payload build",
-    "windows_bundled_backend": "PENDING: new candidate bundled backend/offline audio/reference regression",
-    "windows_desktop_smoke": "PENDING: new candidate native desktop/WebView2 regression",
-    "windows_native_install_upgrade_uninstall": "PENDING: new candidate setup/reinstall/legacy upgrade/uninstall regression",
-    "real_cloud_requests": "NOT RUN: no provider credentials or paid requests used",
+    "python_unittest": "PASS for 0.8.0 source: 99/99 Python tests, including DeepSeek adapter contracts/errors and isolated packaged-backend mock smoke; no live provider calls",
+    "desktop_adapter_tests": "PASS for 0.8.0 source: 10/10 Node adapter tests",
+    "rust_checks": "PASS for 0.8.0 source: 31/31 Rust tests with explicit real Python; Python/dependency locks unchanged",
+    "javascript_syntax": "PASS for 0.8.0 source: frontend and desktop bridge syntax checks",
+    "browser_smoke": "PASS for 0.8.0 source: browser_smoke.py, browser_tauri_smoke.py and browser_deepseek_smoke.py; DeepSeek UI/save/restore and offline flows; no real cloud requests",
+    "windows_tauri_build": "PENDING for 0.8.0: native Windows/MSVC build and package checks have not yet run",
+    "windows_bundled_backend": "PENDING for 0.8.0 Windows execution: scripts/check_bundle_backend.py validates isolated bundled imports, demo/reference storage, missing DeepSeek credentials and official HTTP MockTransport PCM-to-WAV contract for stella/tide and Markdown true/false; local copied-backend regression passed",
+    "windows_desktop_smoke": "PENDING for 0.8.0: native Tauri/WebView2 regression",
+    "windows_native_install_upgrade_uninstall": "PENDING for 0.8.0: setup/reinstall/Electron upgrade/uninstall regression",
+    "real_cloud_requests": "NOT RUN: DeepSeek and other paid/cloud endpoints mocked; no provider credentials used",
     "app_code_signing": "NOT SIGNED: native application and setup are not code signed",
-    "publication": "PREPARING: v0.7.0 online-update release requested; no successful tag workflow or published v0.7.0 Release recorded yet",
-    "package_size": "PENDING: measured online-update candidate/release asset sizes",
+    "publication": "PREPARING: v0.8.0 not yet published; intended URLs are not publication evidence",
+    "package_size": "PENDING for 0.8.0: no measured native release assets yet",
     "local_kokoro": "PREVIOUS verification (2026-11-10): Linux CPU managed runtime, verified download and offline Chinese synthesis/playback/scoring/export. Not rerun for this UI/installer change",
     "local_qwen3": "PREVIOUS partial verification (2026-11-10): CPU dependencies/imports passed; full weights/inference not verified",
     "local_cosyvoice": "PREVIOUS partial verification (2026-11-10): CPU dependencies/imports passed; full weights/inference not verified",
     "local_indextts": "PASS in preceding source verification: complete verified weights/aux downloads, installation trial and actual local API generation with reference SHA256; Linux CPU, 3.947-second PCM16 WAV",
     "local_glmtts": "PARTIAL: official source and runtime imports passed; full GPU inference NOT RUN (no NVIDIA GPU)",
     "local_gpu": "NOT RUN: no NVIDIA GPU available",
-    "windows_msvc_cross_check": "PASS: Windows MSVC target cargo check with native TLS, custom protocol, updater commands and helper CLI using pinned Rust/LLVM resources; actual Windows execution pending CI.",
-    "artifact_integrity": "PENDING: new candidate locked inputs, payload manifest, ZIP CRC, sidecars and independent release download checks",
+    "windows_msvc_cross_check": "PASS for 0.8.0 source: Windows MSVC target cargo check; this is not native execution",
+    "artifact_integrity": "PENDING for 0.8.0: locked payload build and independent published-asset SHA256/CRC/manifest verification",
     "webview2_missing_runtime_install": "NOT RUN: runner already had WebView2; first-time runtime bootstrapper installation and runtime-download failure behavior still require a suitable Windows host",
     "interactive_windows_checks": "NOT RUN: interactive install wizard, Save As dialog selection, actual speaker output, SmartScreen experience and replacing an application while running; native audio smoke uses muted playback",
-    "windows_online_update_apply": "PENDING: native standalone helper using pinned published v0.6.0 installer and ZIP, both upgrade kinds, all payload hashes, bad SHA/invalid archive rejection before readiness, unknown/profile file preservation",
-    "update_transport": "PENDING: fixed GitHub Release origin, strict version/asset matching, redirect/size limits, SHA256 and staged download failure behavior",
-    "update_ui": "PASS in mocked browser/Node tests: update controls/state, automatic-check preference, progress/retry and busy-install handling. Native Windows CI remains pending.",
-    "windows_online_update_candidate": "PASS for candidate 092017fa9df5170f683f5a34f855a3006cf38a30 in CI 43372538305: real v0.6.0 portable and installed upgrades, corrupt SHA/ZIP rejection, all payload hashes and user-file preservation. Final restart-failure feedback changes await the next CI build."
+    "windows_online_update_apply": "PENDING for 0.8.0: actual installed/portable updates from both 0.6.0 and 0.7.0; the 0.7.0 baseline must execute its published original apply helper",
+    "update_transport": "PREVIOUS PASS in 0.7.0: fixed official GitHub HTTPS metadata/download and SHA256; unchanged by the DeepSeek adapter",
+    "update_ui": "PASS in 0.8.0 browser/bridge checks; actual 0.8.0 native helper regression remains pending",
+    "windows_online_update_candidate": "PENDING for 0.8.0: PR/tag CI not yet completed; previous 0.7.0 evidence is recorded under previous_published_release",
+    "deepseek_packaged_backend": "PASS locally: 4/4 packaging tests, including fresh -I interpreter importing only the copied backend, inherited credential clearing, no default HTTP transports, official request contract and exact PCM16 WAV frames. Windows embedded-runtime execution pending"
   },
   "release_integrity": "Build scripts retain locked Python/wheel and WebView2-bootstrapper SHA256 checks, final ZIP CRC and payload manifest hashes; SHA256 sidecars are generated for ZIP and setup EXE. Rust uses Cargo.lock.",
   "persistent_config": "%LOCALAPPDATA%\\TTS Lab\\credentials.env (plaintext, user-owned)",
@@ -44,24 +45,49 @@
   "persistent_variants": "%LOCALAPPDATA%\\TTS Lab\\data\\variants.json",
   "persistent_models": "%LOCALAPPDATA%\\TTS Lab\\models",
   "previous_published_release": {
-    "version": "0.6.0",
+    "version": "0.7.0",
     "desktop": "Tauri 2.12.5",
-    "commit": "af8d0fbf0617e7df66a873d66b891ce9c7e2f1e6",
-    "release_url": "https://github.com/whoarei/tts-lab/releases/tag/v0.6.0",
-    "workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43366061070",
-    "status": "PUBLISHED: v0.6.0 Windows release workflow passed; four assets independently downloaded and verified after publication",
-    "installer_bytes": 44518898,
-    "portable_zip_bytes": 55839239,
+    "commit": "2b50795ee3769461d1d95f12ddfb31d2ee295ea8",
+    "release_url": "https://github.com/whoarei/tts-lab/releases/tag/v0.7.0",
+    "workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43375806596",
+    "status": "PUBLISHED: Windows tag workflow completed successfully; four release assets independently downloaded and verified after publication",
+    "installer_bytes": 44664865,
+    "portable_zip_bytes": 56051446,
     "sha256": {
-      "TTS-Lab-0.6.0-win-x64-setup.exe": "ad2208e31d9f71d1e232b02f5dca2e0c565192e83a31150161f236301160f06e",
-      "TTS-Lab-0.6.0-win-x64.zip": "c6da9cebaf1e51e9b0da680af6fb6c2cee51a1ada8a280db0344ae2da907bb1b"
+      "TTS-Lab-0.7.0-win-x64-setup.exe": "36455841c3b58135f64bbde09a3e401e57d7816ea900c7d9a343e68184818d0c",
+      "TTS-Lab-0.7.0-win-x64.zip": "bfb3ccb1199f9bb70e9b2cc1dfc8faf3e31f25a38c4964ec82bd8ce799a47a01"
     },
-    "independent_integrity": "PASS: setup/ZIP sidecar SHA256, ZIP CRC, x64 executable headers, all 2,840 payload manifest hashes, exact backend/runtime-lock text and Python payload identity; no Electron runtime",
-    "python_unittest": "PASS for 0.6.0 preparation: pip check and 91/91 tests, including actual local NSIS 3.11 compilation; no skipped tests.",
-    "desktop_adapter_tests": "PASS for 0.6.0 preparation: 8/8 Node adapter tests after npm ci.",
-    "rust_checks": "PASS for 0.6.0 preparation: 9/9 tests with explicit project Python, including actual backend start/auth/offline WAV/Range/exports/persistence/shutdown; --locked --no-default-features.",
-    "browser_smoke": "PASS for 0.6.0 preparation: full browser UI and mocked Tauri transport flows using separate fresh data directories and offline demos; audio, references, saved schemes, exports, history and responsive layouts; no JavaScript errors.",
-    "online_updates": "NOT PRESENT: one manual upgrade to a version containing the feature is required"
+    "independent_integrity": "PASS: exact tag target/four assets; setup and ZIP SHA256; ZIP CRC; all 2,840 payload hashes; 12 backend source files, documentation and Rust notices matched the tag; no Electron files. All 2,816 Python/runtime/wheel files exactly matched authenticated v0.6.0 bytes.",
+    "checks": {
+      "python_unittest": "PASS: 92/92 Python tests including idle/busy update-activity privacy and desktop authentication; actual local NSIS compilation.",
+      "desktop_adapter_tests": "PASS: 10/10 Node tests for narrow bridge, updater zero-argument commands and sanitized/disposable update events.",
+      "rust_checks": "PASS: 31/31 Rust tests with explicit real Python, including HTTPS/download confinement, portable update/rollback/cancel, missing restart target handling and backend/proxy integration.",
+      "javascript_syntax": "PASS: app.js, desktop.js and native smoke.js syntax.",
+      "browser_smoke": "PASS: normal browser full flow and extended Tauri mocked transport UI; check/download/install states, active-generation/install-first freeze, retry, daily gating and opt-out; no JS errors.",
+      "windows_tauri_build": "PASS for published 0.7.0: tag workflow 43375806596; locked Rust/MSVC build and all package checks",
+      "windows_bundled_backend": "PASS for published 0.7.0: embedded Python imports, provider catalog/version, offline demo WAV and private reference storage; DeepSeek was not included in 0.7.0",
+      "windows_desktop_smoke": "PASS for published 0.7.0: native Tauri/WebView2 offline reference/audio/export/window-control smoke",
+      "windows_native_install_upgrade_uninstall": "PASS for published 0.7.0: fresh install, reinstall, published Electron 0.5.0 upgrade and uninstall with user-file preservation",
+      "real_cloud_requests": "NOT RUN: no provider credentials or paid requests used",
+      "app_code_signing": "NOT SIGNED: native application and setup are not code signed",
+      "publication": "PUBLISHED: v0.7.0 four verified assets; commit 2b50795ee3769461d1d95f12ddfb31d2ee295ea8",
+      "package_size": "MEASURED published 0.7.0: setup 44,664,865 bytes; ZIP 56,051,446 bytes; unpacked 127,961,213 bytes",
+      "local_kokoro": "PREVIOUS verification (2026-11-10): Linux CPU managed runtime, verified download and offline Chinese synthesis/playback/scoring/export. Not rerun for this UI/installer change",
+      "local_qwen3": "PREVIOUS partial verification (2026-11-10): CPU dependencies/imports passed; full weights/inference not verified",
+      "local_cosyvoice": "PREVIOUS partial verification (2026-11-10): CPU dependencies/imports passed; full weights/inference not verified",
+      "local_indextts": "PASS in preceding source verification: complete verified weights/aux downloads, installation trial and actual local API generation with reference SHA256; Linux CPU, 3.947-second PCM16 WAV",
+      "local_glmtts": "PARTIAL: official source and runtime imports passed; full GPU inference NOT RUN (no NVIDIA GPU)",
+      "local_gpu": "NOT RUN: no NVIDIA GPU available",
+      "windows_msvc_cross_check": "PASS during 0.7.0 preparation: Windows MSVC target cargo check with native TLS/custom protocol/updater/helper CLI. Actual native execution passed separately in published tag workflow 43375806596.",
+      "artifact_integrity": "PASS after independent release download: SHA256, ZIP CRC, exact 2,840 payload manifest hashes/source/notices and unchanged Python payload",
+      "webview2_missing_runtime_install": "NOT RUN: runner already had WebView2; first-time runtime bootstrapper installation and runtime-download failure behavior still require a suitable Windows host",
+      "interactive_windows_checks": "NOT RUN: interactive install wizard, Save As dialog selection, actual speaker output, SmartScreen experience and replacing an application while running; native audio smoke uses muted playback",
+      "windows_online_update_apply": "PASS for published 0.7.0: actual installed and portable 0.6.0-to-0.7.0 helper application; bad SHA256/invalid ZIP rejected before ready; unknown/profile sentinel files preserved",
+      "update_transport": "PENDING: fixed GitHub Release origin, strict version/asset matching, redirect/size limits, SHA256 and staged download failure behavior",
+      "update_ui": "PASS in mocked browser/Node tests: update controls/state, automatic-check preference, progress/retry and busy-install handling. Native Windows CI remains pending.",
+      "windows_online_update_candidate": "PASS: final PR CI 43374416226 and published-tag CI 43375806596; 31 Rust tests and native helper positive/negative regression"
+    },
+    "online_updates": "PUBLISHED: default daily optional startup check, explicit download/install, installed/portable apply helper and manifest rollback; HTTPS/SHA256 channel is unsigned"
   },
   "historical_source_checks": [
     {
@@ -167,7 +193,7 @@
     "native_windows_gui": "NOT VERIFIED; historical backend checks do not establish GUI/audio/installation correctness"
   },
   "online_update_design": {
-    "status": "IMPLEMENTED FOR 0.7.0; native Windows update regression and final release validation pending",
+    "status": "PUBLISHED in 0.7.0; retained by 0.8.0 with dual-baseline native upgrade regression pending",
     "source": "Fixed whoarei/tts-lab GitHub Release HTTPS metadata and matching Windows package/SHA256 assets",
     "automatic_checks": "Enabled by default at startup at most once daily; user can disable independently of manual checking; never automatically downloads or installs",
     "download": "User-triggered download with bounded length, progress and SHA256 verification before install is offered",
@@ -180,18 +206,74 @@
       "installer_sha256": "ad2208e31d9f71d1e232b02f5dca2e0c565192e83a31150161f236301160f06e",
       "portable_zip_sha256": "c6da9cebaf1e51e9b0da680af6fb6c2cee51a1ada8a280db0344ae2da907bb1b",
       "script": "scripts/check_windows_updates.ps1",
-      "status": "PENDING Windows execution"
-    }
+      "status": "PASS in published 0.7.0 workflow 43375806596 for 0.6.0 baseline; 0.8.0 rerun pending",
+      "last_verified_target_version": "0.7.0"
+    },
+    "native_ci_baselines_for_0_8_0": [
+      {
+        "version": "0.6.0",
+        "status": "PENDING: installed/portable update to 0.8.0 using the new helper path"
+      },
+      {
+        "version": "0.7.0",
+        "installer_sha256": "36455841c3b58135f64bbde09a3e401e57d7816ea900c7d9a343e68184818d0c",
+        "portable_zip_sha256": "bfb3ccb1199f9bb70e9b2cc1dfc8faf3e31f25a38c4964ec82bd8ce799a47a01",
+        "status": "PENDING: installed/portable update to 0.8.0 using the original published 0.7.0 helper"
+      }
+    ]
   },
   "release_preparation": {
-    "version": "0.7.0",
-    "previous_release": "0.6.0",
-    "target_tag": "v0.7.0",
-    "intended_release_url": "https://github.com/whoarei/tts-lab/releases/tag/v0.7.0",
-    "status": "PREPARING: refreshed local checks in progress, native Windows CI and publication verification pending; intended URL is not publication evidence",
-    "scope": "Daily optional startup/manual check, explicit verified download and idle-only installed/portable application update; 0.6.0 saved data formats and user directories retained",
-    "runtime_changes": "Native HTTPS uses Windows Schannel/system trust for update downloads; no independent updater signature. Python 3.13.17 and all 27 locked Python distribution versions/hashes retained.",
+    "version": "0.8.0",
+    "previous_release": "0.7.0",
+    "target_tag": "v0.8.0",
+    "intended_release_url": "https://github.com/whoarei/tts-lab/releases/tag/v0.8.0",
+    "status": "PREPARING: local offline source checks passed; Windows PR/tag CI and independent publication verification pending",
+    "scope": "Official DeepSeek TTS adapter with stella/tide, Markdown filtering and bounded raw PCM to 24 kHz mono PCM16 WAV; existing models, schemes, user directories and online update flow retained",
+    "runtime_changes": "No runtime/dependency upgrade: Tauri, Rust, Python 3.13.17 and all 27 locked Python wheel inputs retained",
     "publication_gate": "Upload exactly four nonempty assets to a draft Release, verify their names/sizes, then publish as Latest; existing Releases/drafts are never overwritten automatically",
-    "real_cloud_requests": "none"
+    "real_cloud_requests": "none; all DeepSeek HTTP regression requests use MockTransport"
+  },
+  "historical_published_releases": [
+    {
+      "version": "0.6.0",
+      "desktop": "Tauri 2.12.5",
+      "commit": "af8d0fbf0617e7df66a873d66b891ce9c7e2f1e6",
+      "release_url": "https://github.com/whoarei/tts-lab/releases/tag/v0.6.0",
+      "workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43366061070",
+      "status": "PUBLISHED: v0.6.0 Windows release workflow passed; four assets independently downloaded and verified after publication",
+      "installer_bytes": 44518898,
+      "portable_zip_bytes": 55839239,
+      "sha256": {
+        "TTS-Lab-0.6.0-win-x64-setup.exe": "ad2208e31d9f71d1e232b02f5dca2e0c565192e83a31150161f236301160f06e",
+        "TTS-Lab-0.6.0-win-x64.zip": "c6da9cebaf1e51e9b0da680af6fb6c2cee51a1ada8a280db0344ae2da907bb1b"
+      },
+      "independent_integrity": "PASS: setup/ZIP sidecar SHA256, ZIP CRC, x64 executable headers, all 2,840 payload manifest hashes, exact backend/runtime-lock text and Python payload identity; no Electron runtime",
+      "python_unittest": "PASS for 0.6.0 preparation: pip check and 91/91 tests, including actual local NSIS 3.11 compilation; no skipped tests.",
+      "desktop_adapter_tests": "PASS for 0.6.0 preparation: 8/8 Node adapter tests after npm ci.",
+      "rust_checks": "PASS for 0.6.0 preparation: 9/9 tests with explicit project Python, including actual backend start/auth/offline WAV/Range/exports/persistence/shutdown; --locked --no-default-features.",
+      "browser_smoke": "PASS for 0.6.0 preparation: full browser UI and mocked Tauri transport flows using separate fresh data directories and offline demos; audio, references, saved schemes, exports, history and responsive layouts; no JavaScript errors.",
+      "online_updates": "NOT PRESENT: one manual upgrade to a version containing the feature is required"
+    }
+  ],
+  "deepseek_tts_validation": {
+    "endpoint": "POST https://api.deepseek.com/v1/tools/tts",
+    "credential": "DEEPSEEK_API_KEY (Bearer)",
+    "request_fields": [
+      "text",
+      "voice_id",
+      "format",
+      "filter_markdown"
+    ],
+    "voices": [
+      "stella",
+      "tide"
+    ],
+    "format": "pcm",
+    "output": "24 kHz, mono, PCM16LE WAV; complete response buffered before playback",
+    "packaged_smoke_script": "scripts/check_bundle_backend.py",
+    "local_packaging_tests": "PASS: 4/4",
+    "transport": "httpx.MockTransport only; default sync/async HTTP transports rejected by the smoke check",
+    "native_windows_packaged_python": "PENDING",
+    "real_deepseek_service": "NOT RUN: no real API key or network call; mock success does not establish account/region/quota availability"
   }
 }

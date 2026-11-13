@@ -1,5 +1,7 @@
 """Import the copied backend in a fresh interpreter to catch omitted modules."""
 import os
+import json
+import shutil
 import struct
 from pathlib import Path
 import subprocess
@@ -60,3 +62,26 @@ class PackagingTests(unittest.TestCase):
             copy_backend(source, target)
             self.assertEqual({p.relative_to(target).as_posix() for p in target.rglob('*') if p.is_file()},
                              set(BACKEND_FILES))
+
+    def test_packaged_smoke_checks_deepseek_contract_without_real_network(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = Path(temporary)
+            backend = bundle / 'resources/backend'
+            copy_backend(ROOT / 'tts_lab', backend / 'tts_lab')
+            shutil.copy2(ROOT / 'run.py', backend / 'run.py')
+            script = ROOT / 'scripts/check_bundle_backend.py'
+            version = json.loads((ROOT / 'package.json').read_text())['version']
+            # Simulate the embedded runtime's isolated _pth in a fresh process.
+            # Neither the working directory nor Python path contains the checkout.
+            code = ('import sys, runpy; sys.path.insert(0, ' + repr(str(backend)) + '); '
+                    'sys.argv = ' + repr([str(script), '--bundle', str(bundle), '--version', version]) + '; '
+                    'runpy.run_path(' + repr(str(script)) + ', run_name="__main__")')
+            env = dict(os.environ, DEEPSEEK_API_KEY='inherited-value-must-be-cleared')
+            result = subprocess.run([sys.executable, '-I', '-c', code], cwd=bundle,
+                                    env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            report = json.loads(result.stdout)
+            self.assertEqual(report['status'], 'passed')
+            self.assertEqual(report['deepseek_mock_voices'], ['stella', 'tide'])
+            self.assertEqual(report['real_cloud_requests'], 0)
+            self.assertNotIn('inherited-value-must-be-cleared', result.stdout + result.stderr)

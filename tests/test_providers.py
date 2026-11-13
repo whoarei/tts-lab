@@ -33,6 +33,18 @@ class FragmentedResponse(httpx.AsyncByteStream):
             yield raw[i:i+5]
 
 
+class PCMResponse(httpx.AsyncByteStream):
+    def __init__(self, broken=False):
+        self.broken = broken
+
+    async def __aiter__(self):
+        # Odd transport boundaries must not become odd PCM frames.
+        yield PCM[:3]
+        if self.broken:
+            raise httpx.RemoteProtocolError('private-secret: incomplete chunked read')
+        yield PCM[3:]
+
+
 class AdapterTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.env = patch.dict(os.environ, ENV)
@@ -52,6 +64,8 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         if self.response_override:
             return self.response_override(request)
         host = request.url.host
+        if host == 'api.deepseek.com':
+            return httpx.Response(200, headers={'content-type': 'application/octet-stream'}, stream=PCMResponse())
         if host == 'generativelanguage.googleapis.com':
             return httpx.Response(200, json={'candidates': [{'content': {'parts': [{'inlineData': {'mimeType': 'audio/L16;codec=pcm;rate=24000', 'data': base64.b64encode(PCM).decode()}}]}}]})
         if host.startswith('dashscope'):
@@ -74,6 +88,70 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
 
     def payload(self, index=0):
         return json.loads(self.requests[index].content)
+
+    async def test_deepseek_official_contract_and_pcm_wav(self):
+        for params, voice, filtering in [({}, 'stella', True),
+                                          ({'voice': 'tide', 'filter_markdown': False}, 'tide', False)]:
+            self.requests.clear()
+            result = await synthesize('deepseek', '# 你好，world', params)
+            self.assertEqual(self.payload(), {'text': '# 你好，world', 'voice_id': voice,
+                                             'format': 'pcm', 'filter_markdown': filtering})
+            self.assertEqual(str(self.requests[0].url), 'https://api.deepseek.com/v1/tools/tts')
+            self.assertEqual(self.requests[0].method, 'POST')
+            self.assertEqual(self.requests[0].headers['authorization'], 'Bearer ' + ENV['DEEPSEEK_API_KEY'])
+            self.assertEqual(len(self.requests), 1)
+            self.assertEqual((result.extension, result.mime_type), ('wav', 'audio/wav'))
+            self.assertEqual(result.metadata['provider'], 'deepseek')
+            self.assertEqual(result.metadata['latency_kind'], 'request_completion_not_first_audio')
+            with wave.open(io.BytesIO(result.audio)) as wav:
+                self.assertEqual((wav.getframerate(), wav.getnchannels(), wav.getsampwidth()), (24000, 1, 2))
+                self.assertEqual(wav.readframes(wav.getnframes()), PCM)
+
+    async def test_deepseek_invalid_audio_and_error_bodies_rejected_without_leaks(self):
+        for response in [httpx.Response(200, content=b''), httpx.Response(200, content=b'\x00'),
+                         httpx.Response(200, json={'error': 'private-secret'}),
+                         httpx.Response(200, content=b'{"error":"private-secret"} '),
+                         httpx.Response(200, text='<html>private-secret</html>')]:
+            with self.subTest(response=response):
+                self.requests.clear()
+                self.response_override = lambda r, value=response: value
+                with self.assertRaises(ProviderError) as caught:
+                    await synthesize('deepseek', 'hello', {})
+                self.assertNotIn('private-secret', str(caught.exception))
+                self.assertEqual(len(self.requests), 1)
+        self.response_override = lambda r: httpx.Response(200, content=b'\0' * 58)
+        with patch('tts_lab.providers.MAX_AUDIO', 100), self.assertRaises(ProviderError):
+            await synthesize('deepseek', 'hello', {})
+
+    async def test_deepseek_http_failures_and_interrupted_stream_do_not_retry(self):
+        for status in [302, 400, 401, 402, 429, 503, 504]:
+            self.requests.clear()
+            self.response_override = lambda r, code=status: httpx.Response(code, text='private-secret',
+                headers={'location': 'http://127.0.0.1/private'})
+            with self.assertRaises(ProviderError) as caught:
+                await synthesize('deepseek', 'hello', {})
+            self.assertIn(str(status), str(caught.exception))
+            self.assertNotIn('private-secret', str(caught.exception))
+            self.assertEqual(len(self.requests), 1)
+        self.requests.clear()
+        self.response_override = lambda r: httpx.Response(200, stream=PCMResponse(broken=True))
+        with self.assertRaises(ProviderError) as caught:
+            await synthesize('deepseek', 'hello', {})
+        self.assertNotIn('private-secret', str(caught.exception))
+        self.assertEqual(len(self.requests), 1)
+
+    async def test_deepseek_missing_key_and_timeout(self):
+        with patch.dict(os.environ, {'DEEPSEEK_API_KEY': ''}), self.assertRaises(ProviderError):
+            await synthesize('deepseek', 'hello', {})
+        self.assertEqual(self.requests, [])
+        def timeout(request):
+            raise httpx.ReadTimeout('private-secret')
+        self.response_override = timeout
+        with self.assertRaises(ProviderError) as caught:
+            await synthesize('deepseek', 'hello', {})
+        self.assertIn('超时', str(caught.exception))
+        self.assertNotIn('private-secret', str(caught.exception))
+        self.assertEqual(len(self.requests), 1)
 
     async def test_openai_payload_and_header(self):
         result = await synthesize('openai', '同一文本', {'instructions': '自然平静', 'speed': 1.2})
@@ -312,6 +390,15 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ValidationTests(unittest.TestCase):
+    def test_deepseek_supported_fields_only(self):
+        self.assertEqual(validate_params('deepseek', {}, '中' * 2000),
+                         {'voice': 'stella', 'filter_markdown': True})
+        for params in [{'voice': 'unknown'}, {'filter_markdown': 'false'}, {'filter_markdown': 0},
+                       {'model': 'deepseek-flash'}, {'speed': 1.2}, {'instructions': 'calm'},
+                       {'reference_id': 'private-recording'}, {'format': 'mp3'}]:
+            with self.subTest(params=params), self.assertRaises(ProviderError):
+                validate_params('deepseek', params, 'hello')
+
     def test_defaults_for_all(self):
         for c in CATALOG:
             self.assertEqual(set(validate_params(c['id'], {})), {f['key'] for f in c['fields']})

@@ -1,6 +1,6 @@
 # TTS adapter contracts
 
-Documentation checked 2026-11-09. No paid requests made. These are implementation schemas, not a claim that any particular account has model access. Keep model, voice, region and full endpoint configurable. Fail clearly on unavailable models; never silently substitute another provider/model. All JSON requests use Content-Type: application/json.
+Documentation checks are dated in the provider sections; the latest additions were checked 2026-11-13. No paid requests made. These are implementation schemas, not a claim that any particular account has model access. Expose only supported provider parameters; endpoints remain fixed to official service hosts. Fail clearly on unavailable models; never silently substitute another provider/model. All JSON requests use Content-Type: application/json.
 
 ## Local saved schemes
 
@@ -59,10 +59,19 @@ Body req_params contains text, speaker, audio_params={format:mp3,sample_rate:240
 Response is newline-delimited JSON independent of transport chunk boundaries. Decode each code=0 data field from base64 and concatenate bytes; sentence-only records carry no audio. Require code=20000000 completion; any other code, malformed data, missing completion, empty audio or oversized result fails without retry. Buffer the complete response before playback; do not label its timing as first-audio latency. This adapter does not register cloned voices.
 Sources: https://www.volcengine.com/docs/6561/1598757 (detailed completion marker) and https://docs.volcengine.com/docs/doubao-voice/unidirectional-streaming-text-to-speech-http?lang=zh
 
-## DeepSeek availability (checked 2026-11-13; no adapter)
+## DeepSeek standalone TTS (official documentation checked 2026-11-13)
 
-The public API documentation reviewed did not establish a supported TTS endpoint/model/response contract. No DeepSeek TTS provider is exposed. This is a bounded documentation check, not proof that its apps lack read-aloud or that no private service exists. Speech input, application playback and third-party TTS integrations do not establish an independently callable DeepSeek TTS model.
-Source: https://api-docs.deepseek.com/zh-cn/
+POST https://api.deepseek.com/v1/tools/tts with `Authorization: Bearer $DEEPSEEK_API_KEY` and `Content-Type: application/json`. This is a dedicated speech endpoint, not a chat-completions model. Example app payload: `{"text":"你好","voice_id":"stella","format":"pcm","filter_markdown":true}`. Saved scheme parameters are `voice` (`stella`, default female voice, or `tide`, male voice) and `filter_markdown` (boolean, default true); map `voice` to the API's `voice_id`. Do not send `model`, `speed`, `instructions`, a language argument, reference audio or transcript fields.
+
+The official full-text API accepts `wav` (default, `audio/wav`) or raw `pcm`. This adapter deliberately requests only `pcm`, which the official contract defines as signed 16-bit mono PCM at 24 kHz, and wraps it in a PCM16 WAV for application playback/export. The WAV wrapper/sample rate come from this audio contract, not a guessed model configuration. The application retains its existing 2000-character input bound and 20 MiB total WAV output limit. The upstream limit is 10,000 billed characters and a 64 KiB JSON request body; Chinese characters count as 2 billed characters and all others as 1. One upstream response is limited to 30 minutes of audio.
+
+The documented languages are Mandarin Chinese (`zh`), Cantonese (`yue`), English (`en`), Japanese (`ja`), Korean (`ko`), Malay (`ms`), Arabic (`ar`), Indonesian (`id`), Thai (`th`) and Vietnamese (`vi`), detected from the text without a language field. Speed control and resuming an interrupted request are unsupported. The official WebSocket text-chunk protocol is outside this adapter's scope.
+
+Documented failures include HTTP 400 (no readable text/content review), 429 (too many active account requests), 503 (busy) and 504 (synthesis timeout). Do not automatically retry HTTP errors, timeouts or failed audio reads. Upstream warns that synthesis failures after audio starts can truncate the response; do not mark network/protocol failures, empty or malformed PCM as successful. Raw HTTP PCM has no WebSocket-style completion event, so an even-length payload by itself is not proof that the entire requested speech completed.
+
+Desktop credentials load only from the explicit private `credentials.env`; an inherited `DEEPSEEK_API_KEY` must not silently enable paid requests. Existing credential files are not overwritten: users must add the new key and restart. Verify payload/error handling with mocked transport and credential loading with desktop regression tests. Real-account availability, billing and audio quality have not been verified with a live request.
+Source: https://api-docs.deepseek.com/guides/tts/
+PCM16 little-endian encoding and HTTP payload are corroborated by the official demo: https://github.com/deepseek-ai/chat-demo/blob/5d5dd754ebc1948e977ddb880a9eb5aa25f37b4c/src/services/api/speech.ts
 
 ## StepFun StepAudio (checked 2026-11-13)
 

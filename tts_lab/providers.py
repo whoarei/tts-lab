@@ -214,6 +214,43 @@ def _doubao_audio(raw):
     return _audio(b''.join(chunks))
 
 
+async def _deepseek(client, text, p):
+    """Collect the official PCM stream, then package PCM16LE / mono / 24 kHz.
+
+    HTTP errors and broken transfers fail without retry. Raw PCM has no success
+    marker, so a clean EOF at a frame boundary cannot prove synthesis completed.
+    """
+    body = {'text': text, 'voice_id': p['voice'], 'format': 'pcm',
+            'filter_markdown': p['filter_markdown']}
+    async with client.stream('POST', 'https://api.deepseek.com/v1/tools/tts',
+                             headers={'Authorization': 'Bearer ' + _env('DEEPSEEK_API_KEY')},
+                             json=body) as response:
+        if response.status_code != 200:
+            raise ProviderError(f'DeepSeek HTTP {response.status_code}；请检查额度、凭据与服务状态。没有自动重试。')
+        # The docs specify raw PCM but no PCM MIME type. Accept binary/audio
+        # responses without inventing one; reject text/JSON error bodies first.
+        mime = response.headers.get('content-type', '').split(';', 1)[0].strip().lower()
+        if mime and not (mime.startswith('audio/') or mime == 'application/octet-stream'):
+            raise ProviderError('DeepSeek 未返回 PCM 音频。')
+        chunks, size = [], 0
+        async for chunk in response.aiter_bytes():
+            size += len(chunk)
+            if size > MAX_AUDIO - 44:
+                raise ProviderError('DeepSeek 音频超过 20 MB。')
+            chunks.append(chunk)
+        raw = b''.join(chunks)
+        # Some error responses omit their MIME type. Never turn valid JSON into
+        # audible PCM noise, and never include the vendor body in an error.
+        if raw.lstrip().startswith((b'{', b'[')):
+            try:
+                json.loads(raw)
+            except (ValueError, UnicodeError):
+                pass
+            else:
+                raise ProviderError('DeepSeek 返回了 JSON，未返回 PCM 音频。')
+        return _audio(_wav(raw), {'sample_rate': 24000})
+
+
 async def synthesize(provider_id: str, text: str, params: dict) -> AudioResult:
     p = validate_params(provider_id, params, text)
     start = time.perf_counter()
@@ -252,6 +289,8 @@ async def synthesize(provider_id: str, text: str, params: dict) -> AudioResult:
 
 
 async def _dispatch(c, provider, text, p):
+    if provider == 'deepseek':
+        return await _deepseek(c, text, p)
     if provider == 'openai':
         body = dict(model=p['model'], input=text, voice=p['voice'], response_format=p['format'], speed=p['speed'])
         if p['instructions']:
