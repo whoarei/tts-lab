@@ -103,6 +103,48 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.send(body)).status_code, 422, body)
         self.assertEqual(list(module.DATA_DIR.iterdir()), [])
 
+    async def test_named_variants_persist_without_requiring_provider_credentials(self):
+        self.assertEqual((await self.client.get('/api/variants')).json()['variants'], [])
+        configuration = {'selected_uid': 'voice-b', 'variants': [
+            {'uid': 'voice-a', 'name': '日常播报', 'provider': 'azure', 'params': {}},
+            {'uid': 'voice-b', 'name': '试听音', 'provider': 'demo', 'params': {'frequency': 660}},
+        ]}
+        response = await self.client.put('/api/variants', json=configuration, headers=self.headers)
+        self.assertEqual(response.status_code, 200, response.text)
+        stored = json.loads((module.DATA_DIR / 'variants.json').read_text('utf-8'))
+        self.assertEqual(stored, (await self.client.get('/api/variants')).json())
+        self.assertEqual(stored['selected_uid'], 'voice-b')
+        self.assertEqual(stored['variants'][0]['params']['voice'], 'zh-CN-XiaoxiaoNeural')
+        self.assertEqual(stored['variants'][1]['params']['frequency'], 660)
+        self.assertEqual(list(module.DATA_DIR.glob('*/run.json')), [])
+
+    async def test_variant_save_validation_and_local_guard_preserve_previous_configuration(self):
+        valid = {'selected_uid': 'a', 'variants': [
+            {'uid': 'a', 'name': '原方案', 'provider': 'demo', 'params': {}}]}
+        response = await self.client.put('/api/variants', json=valid, headers=self.headers)
+        expected = response.json()
+        self.assertEqual((await self.client.put('/api/variants', json=valid)).status_code, 403)
+        invalid = [
+            {**valid, 'selected_uid': 'missing'},
+            {**valid, 'variants': valid['variants'] * 2},
+            {**valid, 'variants': []},
+            {**valid, 'variants': [{**valid['variants'][0], 'uid': '../escape'}]},
+            {**valid, 'variants': [{**valid['variants'][0], 'name': ' '}]},
+            {**valid, 'variants': [{**valid['variants'][0], 'provider': 'unknown'}]},
+            {**valid, 'variants': [{**valid['variants'][0], 'params': {'api_key': 'must-not-persist'}}]},
+            {**valid, 'variants': [{**valid['variants'][0], 'params': {'frequency': -1}}]},
+        ]
+        for payload in invalid:
+            response = await self.client.put('/api/variants', json=payload, headers=self.headers)
+            self.assertEqual(response.status_code, 422, response.text)
+            self.assertEqual((await self.client.get('/api/variants')).json(), expected)
+
+    async def test_corrupt_saved_variants_report_an_error_without_overwriting(self):
+        path = module.DATA_DIR / 'variants.json'
+        path.write_text('{broken', encoding='utf-8')
+        self.assertEqual((await self.client.get('/api/variants')).status_code, 500)
+        self.assertEqual(path.read_text('utf-8'), '{broken')
+
     async def test_cross_site_and_token_protection(self):
         body = {"text": "hello", "variants": [{"provider": "demo"}]}
         self.assertEqual((await self.client.post("/api/batches", json=body)).status_code, 403)

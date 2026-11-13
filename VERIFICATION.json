@@ -1,7 +1,7 @@
 {
-  "version": "0.3.0",
-  "checked_on": "2026-11-10",
-  "target": "Windows 10/11 x64 portable folder",
+  "version": "0.4.0",
+  "checked_on": "2026-11-13",
+  "target": "Windows 10/11 x64 per-user installer and portable folder",
   "build_host": "Linux x86_64",
   "tests_host": "Linux / Python 3.12.14 / Node.js 24.22.1",
   "bundled_runtime": {
@@ -10,27 +10,30 @@
     "python_dependencies": 27
   },
   "checks": {
-    "python_unittest": "PASS: 56 tests; cloud providers mocked, local download integrity/lifecycle/consent/routing covered",
+    "python_unittest": "PASS: 63 tests; includes durable named schemes, selection/parameter validation, local request protection, installer cleanup/path boundaries, and existing provider/model coverage",
     "desktop_node_tests": "PASS: 8 tests including real Python launch/auth/offline WAV/persistence/shutdown",
     "locked_dependency_equivalent_tests": "NOT RUN for all 27 Windows dependencies: source dependencies tested on Linux; tag packaging checks Windows closure",
-    "javascript_syntax": "PASS: frontend and desktop main",
-    "runtime_hashes": "PENDING at release preparation: packaging workflow verifies locked runtime SHA256",
-    "windows_wheel_hashes": "PENDING at release preparation: packaging workflow verifies all 26 Windows wheel SHA256 and dependency closure",
-    "windows_payload_structure": "PENDING at release preparation: packaging workflow checks x64 PE headers and payload manifest",
+    "javascript_syntax": "PASS: frontend, desktop main, preload bridge and smoke test",
+    "runtime_hashes": "PASS: local Windows cross-build verified the locked Electron and Python runtime SHA256",
+    "windows_wheel_hashes": "PASS: local Windows cross-build verified all 27 Windows wheels and dependency closure",
+    "windows_payload_structure": "PASS: local cross-build checked x64 PE headers, required preload bridge, excluded private files, payload manifest and final ZIP CRC",
     "windows_native_start": "NOT RUN: no Windows host or Wine",
-    "electron_gui_and_audio": "NOT RUN: needs native Windows --smoke-test",
-    "windows_ci": "PENDING at release preparation: triggered by pushing v0.3.0; see GitHub Actions for final outcome",
+    "electron_gui_and_audio": "PASS on Linux Electron 45.2.3 with headless Ozone: custom titlebar maximize/restore/minimize, no menu, sandboxed bridge, saved scheme reload, single/multi generation, muted audio playback, history and native ZIP download. Windows native GUI/audio NOT RUN",
+    "windows_ci": "RELEASE PREPARATION: the v0.4.0 tag workflow builds and verifies installer and ZIP on Windows; it does not run native application smoke tests",
     "real_cloud_requests": "NOT RUN: no provider credentials or paid requests used",
     "app_code_signing": "NOT SIGNED: upstream runtime executable bytes unchanged; no separate application signing",
-    "publication": "PENDING at release preparation: tag workflow publishes ZIP and SHA256 after successful build",
+    "publication": "RELEASE PREPARATION: v0.4.0 publication authorized; see the GitHub Release and Actions run for final outcome",
     "windows_installer_wheel": "PASS: uv Windows wheel SHA256, relocation, executable x64 PE header and embedded installer discovery",
-    "browser_smoke": "PASS on Linux Chromium: configuration list, desktop/mobile, demo playback and exports; real Kokoro generation without cloud consent, playback, scoring, WAV/ZIP exports",
-    "local_kokoro": "PASS on Linux CPU: managed Python/dependencies, verified model download, offline Chinese trial generation and browser end-to-end",
-    "local_qwen3": "PARTIAL: CPU dependencies and official inference module import passed; full weights/inference NOT RUN because Hugging Face access is blocked in this cloud environment",
-    "local_cosyvoice": "PARTIAL: CPU dependencies plus pinned CosyVoice/Matcha inference imports passed; full weights/inference NOT RUN because Hugging Face access is blocked in this cloud environment",
-    "local_gpu": "NOT RUN: no NVIDIA GPU available"
+    "browser_smoke": "PASS on Linux Chromium: three pages, saved named schemes/reload, single/multi request payloads, independent results, audio playback, ZIP, history, cloud consent, and 1360/880/390px layouts; no JavaScript errors",
+    "local_kokoro": "PREVIOUS verification (2026-11-10): Linux CPU managed runtime, verified download and offline Chinese synthesis/playback/scoring/export. Not rerun for this UI/installer change",
+    "local_qwen3": "PREVIOUS partial verification (2026-11-10): CPU dependencies/imports passed; full weights/inference not verified",
+    "local_cosyvoice": "PREVIOUS partial verification (2026-11-10): CPU dependencies/imports passed; full weights/inference not verified",
+    "local_gpu": "NOT RUN: no NVIDIA GPU available",
+    "windows_installer_build": "PASS: NSIS 3.11 compiled the full setup EXE on Linux; verified Windows PE header and SHA256 sidecar. Separate fixtures compiled from paths with spaces, Chinese and literal dollar signs; exact-file uninstall cleanup tests passed",
+    "windows_native_install_uninstall": "NOT RUN: Windows native installation, shortcuts, upgrade, file-in-use detection and uninstall/data retention require Windows x64 validation"
   },
-  "release_integrity": "Build script validates final ZIP CRC and all payload hashes, writes BUILD-MANIFEST.json and .zip.sha256 sidecar.",
+  "release_integrity": "Build scripts validate locked inputs, final ZIP CRC and all payload hashes, write BUILD-MANIFEST.json, and generate SHA256 sidecars for ZIP and setup EXE.",
   "persistent_config": "%LOCALAPPDATA%\\TTS Lab\\credentials.env (plaintext, user-owned)",
-  "persistent_data": "%LOCALAPPDATA%\\TTS Lab\\data"
+  "persistent_data": "%LOCALAPPDATA%\\TTS Lab\\data",
+  "persistent_variants": "%LOCALAPPDATA%\\TTS Lab\\data\\variants.json"
 }

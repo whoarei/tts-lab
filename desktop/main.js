@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, Menu, dialog, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, session, shell, ipcMain } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -82,46 +82,49 @@ async function openDocumentation(url) {
   if (result.response === 1) await shell.openExternal(url).catch(() => {});
 }
 
-function installMenu() {
-  const restart = async () => {
-    const result = await dialog.showMessageBox(window, {
-      type: 'question', title: '重新载入凭证', buttons: ['取消', '重启应用'], defaultId: 0,
-      message: '保存 credentials.env 后，重启应用使配置生效。',
-      detail: '如果有正在生成的任务，请先等它结束。重启不撤销云端已经收到的请求。',
-    });
-    if (result.response !== 1) return;
-    // Do not relaunch until the child is fully stopped; the single-instance lock
-    // would otherwise race with the replacement instance.
-    quitting = true;
-    await backend.stop();
-    app.relaunch(); allowQuit = true; app.exit(0);
+async function restartApplication() {
+  const result = await dialog.showMessageBox(window, {
+    type: 'question', title: '重新载入凭证', buttons: ['取消', '重启应用'], defaultId: 0, cancelId: 0,
+    message: '保存 credentials.env 后，重启应用使配置生效。',
+    detail: '重启会中断正在生成的任务，云端请求仍可能完成并计费。配置和历史记录会保留。',
+  });
+  if (result.response !== 1 || quitting || closePromise) return;
+  quitting = true;
+  await backend.stop();
+  app.relaunch(); allowQuit = true; app.exit(0);
+}
+
+async function editCredentials() {
+  if (process.platform === 'win32') {
+    const editor = spawn(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'notepad.exe'),
+      [configPath], { shell: false, detached: false, stdio: 'ignore' });
+    editor.on('error', () => dialog.showErrorBox('无法打开记事本', `请手动编辑：${configPath}`));
+    editor.unref();
+  } else {
+    const error = await shell.openPath(configPath);
+    if (error) throw new Error('无法打开凭证文件');
+  }
+}
+
+function installDesktopControls() {
+  // A narrow bridge: only this window's local main frame may invoke fixed actions.
+  const actions = {
+    minimize: () => window.minimize(),
+    toggleMaximize: () => { if (window.isMaximized()) window.unmaximize(); else window.maximize(); },
+    close: () => { void requestQuit(); },
+    getWindowState: () => ({ maximized: window.isMaximized() }),
+    editCredentials,
+    restart: restartApplication,
+    openDataDirectory: async () => { if (await shell.openPath(profile)) throw new Error('无法打开配置目录'); },
   };
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: '文件', submenu: [
-      { label: '本地模型配置…', click: () => window.webContents.executeJavaScript("document.querySelector('#open-local-models').click()") },
-      { label: '编辑 API 凭证…', click: async () => {
-        if (process.platform === 'win32') {
-          const editor = spawn(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'notepad.exe'), [configPath], { shell: false, detached: false, stdio: 'ignore' });
-          editor.on('error', () => dialog.showErrorBox('无法打开记事本', `请手动编辑：${configPath}`));
-          editor.unref();
-        } else await shell.openPath(configPath);
-      } },
-      { label: '重启并载入凭证…', click: restart },
-      { type: 'separator' },
-      { label: '打开数据和配置目录', click: () => shell.openPath(profile) },
-      { type: 'separator' }, { label: '退出', accelerator: 'Alt+F4', click: () => requestQuit() },
-    ] },
-    { label: '编辑', submenu: [{ role: 'undo', label: '撤销' }, { role: 'redo', label: '重做' },
-      { type: 'separator' }, { role: 'cut', label: '剪切' }, { role: 'copy', label: '复制' },
-      { role: 'paste', label: '粘贴' }, { role: 'selectAll', label: '全选' }] },
-    { label: '视图', submenu: [{ role: 'resetZoom', label: '原始大小' },
-      { role: 'zoomIn', label: '放大' }, { role: 'zoomOut', label: '缩小' },
-      { role: 'togglefullscreen', label: '全屏' }] },
-    { label: '帮助', submenu: [{ label: '关于与配置说明', click: () => dialog.showMessageBox(window, {
-      type: 'info', title: 'TTS Lab 0.3.0', message: 'TTS Lab · 本地语音对比工作台',
-      detail: '已内置 Electron、Python 和服务依赖，无需另装 Python。\n\n首次可直接使用离线提示音。真实语音需要你自己的服务凭证和网络，可能收费。\n\n通过“文件 → 编辑 API 凭证”配置，保存后重启。凭证以本机明文文件保存，不在网页中显示，也不会包含在音频导出中。请勿分享配置目录。\n\n数据位置：' + profile + '\n\n此便携版未作应用代码签名；不自动更新或上传数据。',
-    }) }] },
-  ]));
+  ipcMain.handle('desktop:action', async (event, action) => {
+    if (!window || window.isDestroyed() || event.sender !== window.webContents ||
+      event.senderFrame !== window.webContents.mainFrame || !isLocalUrl(event.senderFrame.url, origin) ||
+      !Object.hasOwn(actions, action)) throw new Error('拒绝桌面操作');
+    return actions[action]();
+  });
+  const update = () => { if (!window.isDestroyed()) window.webContents.send('desktop:window-state', { maximized: window.isMaximized() }); };
+  window.on('maximize', update); window.on('unmaximize', update);
 }
 
 async function start() {
@@ -155,9 +158,9 @@ async function start() {
     item.setSaveDialogOptions({ title: '保存 TTS Lab 导出文件', defaultPath: path.join(app.getPath('downloads'), item.getFilename()) });
   });
   window = new BrowserWindow({
-    width: 1440, height: 980, minWidth: 880, minHeight: 640, show: false,
-    title: 'TTS Lab', backgroundColor: '#f5f3ed',
-    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true,
+    width: 1360, height: 920, minWidth: 880, minHeight: 640, show: false, frame: false,
+    title: 'TTS Lab', backgroundColor: '#f6f8fa',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: true,
       webSecurity: true, allowRunningInsecureContent: false, webviewTag: false,
       navigateOnDragDrop: false, spellcheck: false, devTools: !app.isPackaged,
       session: localSession },
@@ -169,7 +172,9 @@ async function start() {
   window.webContents.on('render-process-gone', () => fatal('桌面界面意外停止。请重新打开应用。'));
   window.on('close', event => { if (!allowQuit) { event.preventDefault(); void requestQuit(); } });
   window.once('ready-to-show', () => { if (!smokeMode) window.show(); });
-  installMenu();
+  Menu.setApplicationMenu(null);
+  window.setMenu(null);
+  installDesktopControls();
   await window.loadURL(origin + '/');
   if (smokeMode) {
     try {

@@ -2,6 +2,14 @@
 
 Documentation checked 2026-11-09. No paid requests made. These are implementation schemas, not a claim that any particular account has model access. Keep model, voice, region and full endpoint configurable. Fail clearly on unavailable models; never silently substitute another provider/model. All JSON requests use Content-Type: application/json.
 
+## Local saved schemes
+
+`GET /api/variants` returns `{ "variants": [], "selected_uid": "" }` before first use, or the last saved configuration. `PUT /api/variants` replaces that configuration atomically in the data directory's `variants.json`. Like other local writes, it requires `X-Local-Token`; desktop mode additionally requires the desktop session token on every route.
+
+The payload contains 1–6 schemes, each with a unique `uid`, a 1–60 character `name`, a catalog `provider`, and its supported `params`. `selected_uid` must identify one of those schemes. Saving validates parameter types and ranges and fills provider defaults, but does not require credentials, an installed model, or any synthesis/network request. Unknown fields, credential-like parameters, invalid selection and duplicate IDs are rejected without changing the saved file. A corrupt file returns an explicit error rather than being silently replaced.
+
+The text-test page sends exactly the selected saved scheme to the existing `POST /api/batches` API. The comparison page can use its current draft schemes; saving makes those drafts available to text testing. Credentials remain in the separate local configuration file and are never part of a saved scheme.
+
 ## OpenAI Speech
 
 POST https://api.openai.com/v1/audio/speech

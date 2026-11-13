@@ -1,4 +1,4 @@
-name: Build Windows portable release
+name: Build Windows installer and portable release
 on:
   workflow_dispatch:
   push:
@@ -23,13 +23,16 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: |
           python -c "import json,os; v=json.load(open('package.json'))['version']; assert os.environ['REF_TYPE'] != 'tag' or os.environ['REF_NAME'] == 'v'+v, 'Tag must match package.json version'"
-      - name: Build hash-locked portable ZIP
-        run: python scripts/build_windows.py
+      - name: Install NSIS compiler
+        run: choco install nsis --version=3.11 --no-progress -y
+      - name: Build hash-locked installer and portable ZIP
+        run: python scripts/build_windows.py --installer
       - uses: actions/upload-artifact@v4
         with:
           name: TTS-Lab-Windows-x64
           path: |
             dist/*.zip
+            dist/*-setup.exe
             dist/*.sha256
           if-no-files-found: error
           retention-days: 30
@@ -53,14 +56,23 @@ jobs:
         run: |
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
-          Windows 10/11 x64 portable app. Extract the entire ZIP, then launch TTS Lab.exe. Python and dependencies are bundled.
+          本次更新：
+          - 自绘标题栏，支持最小化、最大化、还原和关闭，移除原生菜单。
+          - 左侧独立页面：文本测试、方案对比、模型配置。
+          - 方案支持命名、本机保存和重复使用；文本测试可选择一个已保存方案单独生成。
+          - 简化界面和使用说明，集中管理本地模型与云服务凭证入口。
+          - 新增 Windows 安装版，提供开始菜单、可选桌面快捷方式和卸载入口；升级和卸载保留个人配置、方案、模型和历史音频。
 
-          Local model configuration supports optional downloads for Kokoro v1.1 INT8, Qwen3-TTS 0.6B/1.7B CustomVoice, and CosyVoice 300M-SFT. Model weights and isolated inference environments are downloaded separately; only models that pass an offline trial generation are marked ready. Start with Kokoro + CPU. See README for hardware requirements and validation limits.
+          下载与安装：
+          - setup.exe：Windows 10/11 x64 当前用户安装，无需管理员权限。
+          - win-x64.zip：完整解压后运行 TTS Lab.exe，保留旁边所有文件。
+          - 两种版本均已包含 Python 和应用依赖；本地人声模型按需另行下载。
+          - exe.sha256 / zip.sha256：对应下载文件的 SHA256 校验值。
 
-          This workflow builds and checks the package integrity only. It does not execute automated application tests or validate Windows startup, audio playback, provider access or quality. Cloud TTS requires credentials and may incur charges. App code is not signed.
+          验证：本地 Linux 上通过 63 项 Python 测试、8 项桌面逻辑测试，以及浏览器和 Electron 离线冒烟；发布工作流在 Windows 构建并检查包完整性。Windows 原生应用启动、音频播放、安装/升级/卸载体验和真实云端调用尚未实机验证。离线测试音只是提示音，不朗读文本；云服务需自备凭证，可能收费。应用未做代码签名。
           NOTES
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" dist/*.zip dist/*.sha256 --clobber
+            gh release upload "$RELEASE_TAG" dist/*.zip dist/*-setup.exe dist/*.sha256 --clobber
           else
-            gh release create "$RELEASE_TAG" dist/*.zip dist/*.sha256 --verify-tag --title "TTS Lab $RELEASE_TAG" --notes-file release-notes.md
+            gh release create "$RELEASE_TAG" dist/*.zip dist/*-setup.exe dist/*.sha256 --verify-tag --title "TTS Lab $RELEASE_TAG" --notes-file release-notes.md
           fi

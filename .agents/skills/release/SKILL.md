@@ -1,6 +1,6 @@
 ---
 name: release
-description: 准备和发布 TTS Lab Windows x64 便携版；用于版本升级、发布前检查、打标签和核验 GitHub Release。
+description: 准备和发布 TTS Lab Windows x64 安装版与便携版；用于版本升级、发布前检查、打标签和核验 GitHub Release。
 ---
 
 # TTS Lab 版本发布
@@ -38,7 +38,7 @@ node --check tts_lab/static/app.js
 如需本地试打包，可执行：
 
 ```bash
-python scripts/build_windows.py
+python scripts/build_windows.py --installer
 python scripts/build_windows.py --verify "dist/TTS-Lab-<version>-win-x64"
 ```
 
@@ -57,14 +57,14 @@ git tag "$tag" HEAD
 git push origin "refs/tags/$tag"
 ```
 
-推送会触发构建并自动创建 GitHub Release，附带 ZIP 和 SHA256 文件。
+推送会触发构建并自动创建 GitHub Release，附带安装 EXE、便携 ZIP 及各自的 SHA256 文件。
 手动触发 `windows-build.yml` 只生成 Actions artifact，不创建 Release。
 已有标签或 Release 时先报告现状；不要自动强推标签或重跑覆盖资产。
 
 ## 4. 核验与报告
 
 - 用 `gh run list --workflow windows-build.yml --commit <SHA> --event push` 找到本次运行，核对提交后用 `gh run watch <run-id> --exit-status` 等待结果。
-- 用 `gh release view <tag> --json tagName,assets,url` 确认 Release 和 `TTS-Lab-<version>-win-x64.zip`、对应 `.sha256` 均存在。
-- 下载本次两个资产到独立临时目录，按 SHA256 sidecar 校验 ZIP；不要只凭工作流启动就报告发布成功。
+- 用 `gh release view <tag> --json tagName,assets,url` 确认 Release 的 `TTS-Lab-<version>-win-x64-setup.exe`、`TTS-Lab-<version>-win-x64.zip` 及两份对应 `.sha256` 均存在。
+- 下载本次四个资产到独立临时目录，按 SHA256 sidecar 分别校验安装 EXE 与便携 ZIP；不要只凭工作流启动就报告发布成功。
 - 失败时检查本次日志，修复已确认的问题；区分构建失败、权限问题和发布失败。已有 GitHub 认证应先复用，不在聊天中索取密钥。
 - 最后报告版本、提交、检查结果、工作流与 Release 链接，以及 Windows 原生测试等未验证项。未发布时明确说明停在哪一步。

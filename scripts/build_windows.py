@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a self-contained Windows x64 portable ZIP on Linux, macOS or Windows.
+"""Build a Windows x64 portable ZIP and optional per-user NSIS installer.
 
 No target executables are run on a cross-build host. Runtime archives and every
 wheel are SHA256-locked. Requires Python 3.10+ and pip on the build host only.
@@ -118,9 +118,10 @@ def verify_pe(path):
 def verify_bundle(bundle, lock):
     required = ['TTS Lab.exe', 'resources/python/python.exe',
                 'resources/python/python313.dll', 'resources/python/python313._pth',
-                'resources/app/main.js', 'resources/app/package.json', 'resources/app/credentials.env.example',
+                'resources/app/main.js', 'resources/app/preload.js', 'resources/app/package.json', 'resources/app/credentials.env.example',
                 'resources/backend/run.py', 'resources/backend/tts_lab/app.py',
-                'resources/python/Lib/site-packages/_wheel_data/uv-0.9.9.data/scripts/uv.exe', '.env.example']
+                'resources/python/Lib/site-packages/_wheel_data/uv-0.9.9.data/scripts/uv.exe',
+                '.env.example', 'README.md', 'WINDOWS-BUILD.md', 'api_contracts.md']
     for name in required:
         if not (bundle / name).is_file():
             raise ValueError(f'Missing bundle member: {name}')
@@ -226,7 +227,7 @@ def build(args):
     (app / 'package.json').write_text(json.dumps({'name': package['name'], 'version': version,
                                                  'main': 'main.js', 'private': True}, indent=2) + '\n')
     shutil.copy2(ROOT / '.env.example', bundle / '.env.example')
-    for name in ['README.md', 'WINDOWS-BUILD.md', 'WINDOWS-README.txt', '先看这里.txt', 'VERIFICATION.json', 'runtime-lock.json']:
+    for name in ['README.md', 'WINDOWS-BUILD.md', 'api_contracts.md', 'WINDOWS-README.txt', '先看这里.txt', 'VERIFICATION.json', 'runtime-lock.json']:
         if (ROOT / name).exists():
             shutil.copy2(ROOT / name, bundle / name)
     count = verify_bundle(bundle, lock)
@@ -247,6 +248,12 @@ def build(args):
             raise ValueError('Final ZIP CRC check failed')
     archive.with_suffix('.zip.sha256').write_text(f'{sha256(archive)}  {archive.name}\n')
     print(f'Built {archive} ({archive.stat().st_size:,} bytes); {count} dependency distributions verified.')
+    if args.installer:
+        try:
+            from .build_installer import build_installer
+        except ImportError:
+            from build_installer import build_installer
+        build_installer(bundle, args.output, args.makensis)
     print('Windows launch, GUI behavior and live provider calls require separate native testing.')
 
 
@@ -254,6 +261,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--cache', type=Path, default=ROOT / '.build-cache')
     parser.add_argument('--output', type=Path, default=ROOT / 'dist')
+    parser.add_argument('--installer', action='store_true', help='Also build a per-user setup EXE (requires NSIS 3)')
+    parser.add_argument('--makensis', help='NSIS compiler executable for --installer')
     parser.add_argument('--verify', type=Path, help='Verify an existing extracted bundle without rebuilding')
     args = parser.parse_args()
     if args.verify:

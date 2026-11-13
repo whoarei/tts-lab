@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import tempfile
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
@@ -196,7 +197,56 @@ async def generate(run: dict):
 
 @app.get("/api/state")
 def state():
-    return {"token": TOKEN, "providers": public_catalog(), "version": "0.3.0", "desktop": DESKTOP}
+    return {"token": TOKEN, "providers": public_catalog(), "version": "0.4.0", "desktop": DESKTOP}
+
+
+class SavedVariant(Variant):
+    uid: str = Field(pattern=r'^[a-zA-Z0-9-]{1,64}$')
+    name: str = Field(min_length=1, max_length=60)
+
+
+class VariantConfiguration(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    variants: list[SavedVariant] = Field(min_length=1, max_length=6)
+    selected_uid: str = Field(max_length=64)
+
+
+@app.get('/api/variants')
+def get_variants():
+    path = DATA_DIR / 'variants.json'
+    if not path.exists():
+        return {'variants': [], 'selected_uid': ''}
+    try:
+        return VariantConfiguration.model_validate_json(path.read_text('utf-8')).model_dump()
+    except (ValueError, OSError):
+        raise HTTPException(500, '无法读取已保存方案，请检查数据目录中的 variants.json。') from None
+
+
+@app.put('/api/variants')
+def save_variants(configuration: VariantConfiguration):
+    ids = [variant.uid for variant in configuration.variants]
+    if len(set(ids)) != len(ids) or configuration.selected_uid not in ids:
+        raise HTTPException(422, '方案编号必须唯一，且所选方案必须存在。')
+    for variant in configuration.variants:
+        variant.name = variant.name.strip()
+        if not variant.name:
+            raise HTTPException(422, '请输入方案名称。')
+        try:
+            variant.params = validate_params(variant.provider, variant.params)
+        except (ValueError, ProviderError) as exc:
+            raise HTTPException(422, f'{variant.name}：{exc}') from None
+    payload = configuration.model_dump()
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=DATA_DIR,
+                                         prefix='.variants-', delete=False) as file:
+            temporary = Path(file.name)
+            json.dump(payload, file, ensure_ascii=False, indent=2)
+        temporary.replace(DATA_DIR / 'variants.json')
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return payload
 
 
 @app.post("/api/batches", status_code=202)

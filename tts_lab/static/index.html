@@ -3,30 +3,65 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TTS Lab · 语音对比工作台</title>
+  <title>TTS Lab · 语音工作台</title>
   <link rel="stylesheet" href="/static/style.css">
   <script defer src="/static/app.js"></script>
 </head>
 <body>
-  <header><a class="brand" href="/">◒ <span>TTS LAB</span></a><div class="local"><span></span> 本机运行 · 不托管密钥</div><button id="open-local-models" class="secondary">本地模型配置</button><a href="#guide">使用说明 ↗</a></header>
-  <main>
-    <section class="intro"><div class="eyebrow">TEXT TO SPEECH / LISTEN & COMPARE</div><h1>选声音，<br>先听<span>同一段。</span></h1><p>把生成式语音与传统神经 TTS 放在一起。调参数，听差别，再选适合你的声音。</p><div class="pills"><span>同文多引擎</span><span>参数独立可调</span><span>盲听与评分</span><span>音频本地保存</span></div></section>
-    <div class="workspace">
-      <section class="panel input-panel"><div class="section-title"><span class="number">01</span><h2>测试文本</h2><span id="text-count">0 / 2000</span></div>
-        <div class="samples" id="samples"></div>
-        <label class="sr-only" for="text">输入所有引擎共同朗读的文本</label>
-        <textarea id="text" maxlength="2000" rows="8" spellcheck="false" placeholder="输入你真实会用到的文本。所有方案都会朗读这一段。"></textarea>
-        <p class="hint">建议一次 50–300 字，先测试日常场景，再试数字、多音字、中英混读。不会自动改写原文或截断长文本。</p>
-      </section>
-      <aside class="panel guide-panel"><div class="mini-label">HOW TO PICK</div><h2>没有全场景冠军。<br>找到你的最佳。</h2><ol><li><b>固定文本</b><span>每轮使用同样内容，参数逐个调整。</span></li><li><b>先盲听</b><span>不看厂商名称，记录自然度与读音错误。</span></li><li><b>再看取舍</b><span>比较生成耗时、表达能力与实际账单。</span></li></ol><p>生成式 ≠ 一定更好。传统神经语音也可能更稳定、更适合播报。</p></aside>
+  <header class="titlebar">
+    <div class="brand"><span class="brand-mark">◒</span><span>TTS LAB</span><span class="titlebar-divider"></span><span class="app-caption">语音工作台</span></div>
+    <div class="local"><span></span> 本机运行</div>
+    <div id="window-controls" class="window-controls" hidden>
+      <button id="window-minimize" aria-label="最小化" title="最小化"><svg viewBox="0 0 16 16"><path d="M3 8h10"/></svg></button>
+      <button id="window-maximize" aria-label="最大化" title="最大化"><svg viewBox="0 0 16 16"><rect class="maximize-icon" x="3.5" y="3.5" width="9" height="9" rx=".5"/><path class="restore-icon" d="M6 5V3.5h6.5V10H11M3.5 6H10v6.5H3.5z"/></svg></button>
+      <button id="window-close" aria-label="关闭" title="关闭"><svg viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></svg></button>
     </div>
-    <section id="local-model-panel" class="panel model-panel" hidden aria-labelledby="model-panel-title"><div class="section-title"><h2 id="model-panel-title">本地模型配置</h2><button id="close-local-models" class="secondary push">收起</button></div><p>选择模型下载，安装完成后即可离线生成真实人声，无需 API Key。首次会同时下载独立 Python 和推理依赖，请预留足够空间并保持程序打开。</p><label class="model-device">运行设备<select id="local-device"><option value="cpu">CPU · 无需独立显卡</option><option value="cuda">NVIDIA GPU · 需要兼容的驱动（Kokoro 始终使用 CPU）</option></select></label><p class="hint">模型来自官方 Hugging Face 仓库或 sherpa-onnx 发布包。下载时联网，推理时不向云端发送文本。单次本地生成最多 300 字。Qwen 与 CosyVoice 的 CPU 生成可能需要数分钟，本地任务会依次执行。</p><p id="model-notice" role="status" aria-live="polite"></p><div id="local-model-list" class="model-grid"></div><p class="hint">下载完成后还会进行离线试生成，通过才显示“可用”。删除模型会保留共用运行环境与下载缓存，方便再次安装。</p></section>
-    <section class="config-section"><div class="section-title"><span class="number">02</span><h2>对比方案</h2><span>最多 6 组，同一家也能比参数</span><button id="add-variant" class="secondary push">＋ 添加方案</button></div><div id="variants" class="variant-grid"></div></section>
-    <section class="runbar"><div><label class="check"><input id="cloud-consent" type="checkbox">我确认将这段文本发送给所选云服务，了解调用可能收费。</label><p>密钥仅从本机环境变量读取。点击生成才会调用所选服务，不自动重试；无实时价格估算。</p></div><button id="generate" class="primary">生成并对比 <span>↗</span></button></section>
-    <div id="notice" role="status" aria-live="polite" hidden></div>
-    <section id="results-section" class="results-section"><div class="section-title"><span class="number">03</span><h2>听见差别</h2><label class="check push"><input id="blind" type="checkbox" checked> 盲听模式</label><button id="refresh-history" class="secondary">历史记录</button></div><p class="hint" id="blind-hint">盲听会随机排列、隐藏引擎名称与参数。评分后取消勾选即可揭晓；下载和导出会暴露身份。</p><details id="source-panel" hidden><summary>本轮实际朗读原文</summary><p id="source-text"></p></details><div id="results" class="result-grid"><div class="empty"><div>◖◗</div><h3>你的下一款声音，从这里开始。</h3><p>先运行离线演示检查流程，下载本地模型或配置 API Key 后开始真实试听。</p></div></div><div class="exports" id="exports" hidden><a id="download-batch" class="secondary">下载本轮音频 + 配置 ZIP</a><a href="/api/export.csv" class="secondary">导出最近 200 条 CSV</a><span>文本、参数和评分会写入本机 data 文件夹。</span></div></section>
-    <section id="history-panel" class="panel" hidden><div class="section-title"><h2>最近对比</h2><button id="close-history" class="secondary push">关闭</button></div><div id="history"></div></section>
-    <section id="guide" class="panel guide-bottom"><h2>开始前，读这几条</h2><div class="guide-columns"><div><h3>1. 配置一次</h3><p id="config-guide">在项目根目录把 .env.example 复制为 .env，填写你要测的厂商密钥。重启程序。缺少凭证的服务会显示需要的变量名，页面不接受或保存 API Key。</p></div><div><h3>2. 看清参数</h3><p>不同引擎只显示各自支持的参数。音色 ID、模型 ID、地区须与你的账号权限匹配。自然语言风格指令不保证逐字生效。</p></div><div><h3>3. 正确解读结果</h3><p>耗时是完整请求到音频返回的时间，不是首包延迟。并行请求与网络都会影响它。评分是个人主观评价，不是自动客观质量分。</p></div></div><p class="footnote">本工具不会自动购买、克隆声音、分享文本或发布音频。所有云端适配器均须你用自己的账号做首次实测；文档核对与模拟测试不能代替真实 API 验证。默认仅监听 127.0.0.1，不要把端口或 .env 暴露到公网。</p></section>
-  </main>
-  <footer><span>◒ TTS LAB</span><span>先听，再决定。 · v0.3.0</span></footer>
-</body></html>
+  </header>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="nav-caption">工作空间</div>
+      <nav aria-label="主导航">
+        <button class="nav-button active" data-page="test" aria-current="page" aria-controls="page-test" title="文本测试"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg><span>文本测试</span></button>
+        <button class="nav-button" data-page="compare" aria-controls="page-compare" title="方案对比"><svg viewBox="0 0 24 24"><path d="M4 5h6v14H4zM14 5h6v14h-6zM7 8v8M17 8v8"/></svg><span>方案对比</span></button>
+        <button class="nav-button" data-page="models" aria-controls="page-models" title="模型配置"><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></svg><span>模型配置</span></button>
+      </nav>
+      <div class="sidebar-bottom"><span class="privacy-icon">⌂</span><div>声音在此，灵感发生。<small>配置与音频保存在本机</small></div><span class="version">v0.4.0</span></div>
+    </aside>
+    <main id="main-content">
+      <div id="notice" role="status" aria-live="polite" hidden></div>
+      <section id="page-test" class="page" aria-labelledby="test-title">
+        <div class="page-heading"><div><div class="eyebrow">PLAYGROUND</div><h1 id="test-title" tabindex="-1">文本测试</h1><p>选一个方案，听听文字的声音。</p></div><button class="secondary history-button">历史记录</button></div>
+        <div class="test-layout">
+          <section class="panel editor-panel">
+            <div class="section-title"><h2>朗读文本</h2><span id="text-count" class="push">0 / 2000</span></div>
+            <div class="samples" id="samples"></div>
+            <label class="sr-only" for="text">输入要朗读的文本</label>
+            <textarea id="text" maxlength="2000" rows="9" spellcheck="false" placeholder="输入或粘贴要朗读的内容…"></textarea>
+            <p class="hint">建议 50–300 字。原文直接朗读，不自动改写或截断。</p>
+            <div class="editor-actions"><label id="test-consent-row" class="check" hidden><input id="test-cloud-consent" type="checkbox">我同意发送文本至所选云服务，调用可能收费。</label><div class="generate-row"><span class="hint" id="test-run-hint">仅生成所选方案</span><button id="test-generate" class="primary" disabled><span>▷</span> 生成语音</button></div></div>
+          </section>
+          <aside class="panel selection-panel"><div class="section-title"><h2>测试方案</h2><span class="subtle-label">单方案</span></div><label class="field" for="test-variant">选择已保存的方案<select id="test-variant" disabled><option>正在加载方案…</option></select></label><div id="selected-variant"></div><button id="manage-variants" class="text-button">编辑方案与参数 <span>→</span></button><p class="hint selection-note">方案可在「方案对比」中配置并保存，随后在这里重复使用。</p></aside>
+        </div>
+        <div id="test-results-slot"></div>
+      </section>
+      <section id="page-compare" class="page" hidden aria-labelledby="compare-title">
+        <div class="page-heading"><div><div class="eyebrow">LISTEN & COMPARE</div><h1 id="compare-title" tabindex="-1">方案对比</h1><p>同一段文字，不同声音。也可以复制方案，只调整一个参数。</p></div><button class="secondary history-button">历史记录</button></div>
+        <section class="panel compare-input"><div class="section-title"><h2>对比文本</h2><span id="compare-text-count" class="push">0 / 2000</span></div><label class="sr-only" for="compare-text">输入所有方案共同朗读的文本</label><textarea id="compare-text" rows="3" maxlength="2000" spellcheck="false" placeholder="输入所有方案共同朗读的内容…"></textarea><p class="hint">与文本测试共用同一段文字。本地模型每次最多 300 字。</p></section>
+        <div class="section-title config-heading"><h2>对比方案 <span id="variant-count" class="count-badge">0 / 6</span></h2><span id="save-state" role="status" aria-live="polite"></span><button id="save-variants" class="secondary push" disabled>保存方案</button><button id="add-variant" class="secondary" disabled>＋ 添加方案</button></div>
+        <div id="variants" class="variant-grid"></div>
+        <section class="runbar"><div><label id="compare-consent-row" class="check" hidden><input id="compare-cloud-consent" type="checkbox">我同意发送文本至所选云服务，调用可能收费。</label><p id="compare-run-hint">所有方案使用上方同一段文字，结果可盲听、评分与导出。</p></div><button id="compare-generate" class="primary" disabled>生成并对比 <span>→</span></button></section>
+        <div id="compare-results-slot"></div>
+      </section>
+      <section id="page-models" class="page" hidden aria-labelledby="models-title">
+        <div class="page-heading"><div><div class="eyebrow">MODELS & SERVICES</div><h1 id="models-title" tabindex="-1">模型配置</h1><p>下载本地模型，或连接你自己的云端语音服务。</p></div></div>
+        <section class="panel credentials-panel"><div><h2>云服务凭证</h2><p id="config-guide">在项目根目录将 .env.example 复制为 .env，填写所需服务密钥，保存后重启程序。</p></div><div id="desktop-settings" class="settings-actions" hidden><button id="edit-credentials" class="secondary">编辑 API 凭证</button><button id="restart-app" class="secondary">重启并载入凭证</button><button id="open-data-directory" class="text-button">打开配置目录 ↗</button></div><p class="hint">凭证仅在本机文件中保存，界面不会显示密钥。检测到配置不代表账号与模型权限已验证。</p><div id="cloud-services" class="service-grid"></div></section>
+        <section id="local-model-panel" class="panel model-panel" aria-labelledby="model-panel-title"><div class="section-title"><h2 id="model-panel-title">本地离线模型</h2><span>下载一次，离线使用</span></div><p class="hint">无需 API Key。首次同时下载独立 Python 和推理依赖，请预留空间并保持程序打开。推荐先试 Kokoro + CPU。</p><label class="model-device">运行设备<select id="local-device"><option value="cpu">CPU · 无需独立显卡</option><option value="cuda">NVIDIA GPU · 需要兼容驱动（Kokoro 使用 CPU）</option></select></label><p id="model-notice" role="status" aria-live="polite"></p><div id="local-model-list" class="model-grid"></div><p class="hint">模型来自官方 Hugging Face 仓库或 sherpa-onnx 发布包，下载需联网。安装后会离线试生成，通过才显示可用。Qwen 与 CosyVoice 在 CPU 上可能需要数分钟，生成时文本不发送到云端。</p></section>
+        <details class="panel help-panel"><summary>使用提示</summary><div class="guide-columns"><div><h3>先确认声音可用</h3><p>离线测试音只用于检查播放和导出，不朗读文字。下载模型或配置云服务后才能生成真实人声。</p></div><div><h3>让比较更公平</h3><p>固定文本，一次只改一个参数。开启盲听隐藏服务名称，听完评分后再揭晓。</p></div><div><h3>理解生成耗时</h3><p>耗时包含完整请求与模型加载，不是首包延迟。云端失败不自动重试，重新调用可能再次收费。</p></div></div></details>
+      </section>
+      <section id="history-panel" class="panel" hidden aria-labelledby="history-title"><div class="section-title"><h2 id="history-title">最近记录</h2><button id="close-history" class="secondary push">关闭</button></div><div id="history"></div></section>
+      <footer><span>先听，再决定。</span><span>音频、参数与评分 · 本地保存</span></footer>
+    </main>
+  </div>
+  <template id="results-template"><section class="results-section"><div class="section-title"><h2>试听结果</h2><label class="check push blind-control"><input class="blind" type="checkbox"> 盲听模式</label></div><p class="hint blind-hint">盲听会随机排列并隐藏服务名称和参数。取消勾选即可揭晓，下载和导出会包含服务名称。</p><details class="source-panel" hidden><summary>本轮朗读原文</summary><p class="source-text"></p></details><div class="results result-grid"><div class="empty"><div class="empty-icon">♫</div><h3>等待你的第一段声音</h3><p>生成后，在这里试听、查看参数并下载音频。</p></div></div><div class="exports" hidden><a class="download-batch secondary">下载音频与配置 ZIP</a><a href="/api/export.csv" class="secondary">导出最近记录 CSV</a></div></section></template>
+</body>
+</html>
