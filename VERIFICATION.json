@@ -12,7 +12,7 @@
   "checks": {
     "python_unittest": "PASS: 92/92 Python tests including idle/busy update-activity privacy and desktop authentication; actual local NSIS compilation.",
     "desktop_adapter_tests": "PASS: 10/10 Node tests for narrow bridge, updater zero-argument commands and sanitized/disposable update events.",
-    "rust_checks": "PASS: 30/30 Rust tests with explicit real Python. Includes 8 release-channel/download tests, 13 portable helper/rollback/cancel tests and backend/proxy integration. Native TLS HTTPS metadata/download of published v0.6.0 installer also validated.",
+    "rust_checks": "PASS: 31/31 Rust tests with explicit real Python, including HTTPS/download confinement, portable update/rollback/cancel, missing restart target handling and backend/proxy integration.",
     "javascript_syntax": "PASS: app.js, desktop.js and native smoke.js syntax.",
     "browser_smoke": "PASS: normal browser full flow and extended Tauri mocked transport UI; check/download/install states, active-generation/install-first freeze, retry, daily gating and opt-out; no JS errors.",
     "windows_tauri_build": "PENDING: new Windows online-update candidate compile and locked payload build",
@@ -35,7 +35,8 @@
     "interactive_windows_checks": "NOT RUN: interactive install wizard, Save As dialog selection, actual speaker output, SmartScreen experience and replacing an application while running; native audio smoke uses muted playback",
     "windows_online_update_apply": "PENDING: native standalone helper using pinned published v0.6.0 installer and ZIP, both upgrade kinds, all payload hashes, bad SHA/invalid archive rejection before readiness, unknown/profile file preservation",
     "update_transport": "PENDING: fixed GitHub Release origin, strict version/asset matching, redirect/size limits, SHA256 and staged download failure behavior",
-    "update_ui": "PASS in mocked browser/Node tests: update controls/state, automatic-check preference, progress/retry and busy-install handling. Native Windows CI remains pending."
+    "update_ui": "PASS in mocked browser/Node tests: update controls/state, automatic-check preference, progress/retry and busy-install handling. Native Windows CI remains pending.",
+    "windows_online_update_candidate": "PASS for candidate 092017fa9df5170f683f5a34f855a3006cf38a30 in CI 43372538305: real v0.6.0 portable and installed upgrades, corrupt SHA/ZIP rejection, all payload hashes and user-file preservation. Final restart-failure feedback changes await the next CI build."
   },
   "release_integrity": "Build scripts retain locked Python/wheel and WebView2-bootstrapper SHA256 checks, final ZIP CRC and payload manifest hashes; SHA256 sidecars are generated for ZIP and setup EXE. Rust uses Cargo.lock.",
   "persistent_config": "%LOCALAPPDATA%\\TTS Lab\\credentials.env (plaintext, user-owned)",

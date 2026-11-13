@@ -116,7 +116,10 @@ impl UpdateManager {
     }
 
     pub(crate) fn auto_check_supported(&self) -> bool {
-        self.snapshot().distribution != "development"
+        let view = self.snapshot();
+        // Keep a failed installation's recovery message visible on restart,
+        // including when the webview cannot persist the daily-check timestamp.
+        view.distribution != "development" && view.error.is_none()
     }
 
     fn read_previous_result(&self) {

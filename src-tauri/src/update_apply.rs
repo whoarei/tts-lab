@@ -799,16 +799,49 @@ fn default_updates_root() -> ApplyResult<PathBuf> {
     clean_existing_directory(&base?.join("TTS Lab/updates"))
 }
 
-fn restart(old: &ExistingApp, no_restart: bool) {
+fn restart(old: &ExistingApp, no_restart: bool) -> bool {
     if no_restart {
-        return;
+        return true;
     }
-    if verify_pe(&old.root.join(APP_EXE), true).is_ok() {
-        let _ = Command::new(old.root.join(APP_EXE))
+    verify_pe(&old.root.join(APP_EXE), true).is_ok()
+        && Command::new(old.root.join(APP_EXE))
             .current_dir(&old.root)
-            .spawn();
+            .spawn()
+            .is_ok()
+}
+
+#[cfg(windows)]
+fn show_restart_failure() {
+    use std::ffi::c_void;
+    #[link(name = "user32")]
+    extern "system" {
+        fn MessageBoxW(
+            window: *mut c_void,
+            text: *const u16,
+            caption: *const u16,
+            kind: u32,
+        ) -> i32;
+    }
+    let text: Vec<u16> = "TTS Lab 无法重新启动。请手动打开应用；若仍无法启动，请下载完整安装包重新安装。\n\n个人配置、历史音频和模型仍保存在用户数据目录。"
+        .encode_utf16().chain(Some(0)).collect();
+    let caption: Vec<u16> = "TTS Lab 更新后无法启动"
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    // No parent window remains after the acknowledged shutdown. A native error
+    // is necessary here because a failed relaunch cannot show the result card.
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            caption.as_ptr(),
+            0x0001_0010,
+        );
     }
 }
+
+#[cfg(not(windows))]
+fn show_restart_failure() {}
 
 fn run_with_root(request_path: &Path, updates_root: &Path) -> i32 {
     let updates_root = match clean_existing_directory(updates_root) {
@@ -913,12 +946,17 @@ fn run_with_root(request_path: &Path, updates_root: &Path) -> i32 {
             let _ = atomic_status(&result_path, status, &request.expected_version, error);
             // An ACK can be cancelled while the parent is still running. Do not
             // create a second copy of the app in that case.
-            if parent_exited && !cancelled(&request_dir) {
-                restart(&old, request.no_restart);
+            if parent_exited && !cancelled(&request_dir) && !restart(&old, request.no_restart) {
+                show_restart_failure();
             }
             return Err(error);
         }
-        restart(&old, request.no_restart);
+        if !restart(&old, request.no_restart) {
+            let message = "新版本已安装但无法启动，请手动打开或重新安装。";
+            let _ = atomic_status(&result_path, "failed", &request.expected_version, message);
+            show_restart_failure();
+            return Err(message);
+        }
         Ok(())
     })();
     match outcome {
@@ -1433,5 +1471,16 @@ mod tests {
         )
         .is_err());
         fixture.assert_original_untouched();
+    }
+    #[test]
+    fn restart_skip_never_launches_and_missing_executable_returns_failure() {
+        let fixture = Fixture::new();
+        let old = fixture.old();
+        // The fixture is an identity-bearing PE header, not an executable app.
+        // Test/CI mode must never try to launch it or display a native dialog.
+        assert!(restart(&old, true));
+        fs::remove_file(fixture.target.join(APP_EXE)).unwrap();
+        assert!(!restart(&old, false));
+        assert!(restart(&old, true));
     }
 }
