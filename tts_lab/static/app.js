@@ -8,8 +8,9 @@ const el = (tag, text, cls) => {
 };
 const newSession = () => ({runs: [], batch: '', order: [], drafts: {}});
 const S = {desktop: false, token: '', providers: [], references: [], variants: [], savedVariants: [], selected: '',
-  page: 'test', busy: false, saving: false, dirty: false, ready: false,
+  page: 'test', busy: false, saving: false, dirty: false, ready: false, modelBusy: false, updating: false,
   sessions: {test: newSession(), compare: newSession()}};
+const U = {view: null, pending: false};
 const samples = [
   ['中文日常', '你好，欢迎来到语音对比工作台。今天我们不看排行榜，而是用同一段文字，听一听不同声音的自然度、停顿和情感。你更喜欢哪一种？'],
   ['数字与多音字', '银行行长说，这张银行卡不能转借。重庆的重量级选手重新出发。订单编号是 A-1028，金额为 3,205.60 元，折扣是百分之十五，发车时间是 2026 年 11 月 9 日上午 8 点 05 分。'],
@@ -27,6 +28,7 @@ function notice(message, error = false) {
   if (error) box.scrollIntoView({block: 'nearest', behavior: 'smooth'});
 }
 async function api(path, options = {}) {
+  if (S.updating && !['GET', 'HEAD', 'OPTIONS'].includes((options.method || 'GET').toUpperCase())) throw new Error('正在安装应用更新，请等待应用重新启动。');
   const response = await fetch(apiUrl(path), {...options, headers: {'Content-Type': 'application/json', 'X-Local-Token': S.token, ...options.headers}});
   let data;
   try { data = await response.json(); } catch { throw new Error('服务响应异常，请检查本机程序是否仍在运行。'); }
@@ -82,7 +84,7 @@ function updateText(value) {
 }
 function updateSaveState(message) {
   $('#save-state').textContent = message ?? (S.dirty ? '有未保存的修改' : '已保存到本机');
-  $('#save-variants').disabled = !S.ready || S.saving || S.busy || !S.dirty;
+  $('#save-variants').disabled = !S.ready || S.saving || S.busy || S.updating || !S.dirty;
 }
 function markDirty() { S.dirty = true; $('#save-state').classList.remove('error'); updateSaveState(); updateConsent(); }
 function updateConsent() {
@@ -96,8 +98,19 @@ function updateConsent() {
     row.hidden = !needed;
   }
 }
+function freezeUpdateControls() {
+  for (const control of document.querySelectorAll('#text, #compare-text, .samples button, #test-cloud-consent, #compare-cloud-consent, #local-device, #local-model-list button, #edit-credentials, #restart-app, .score-grid select, .result-notes, .score-actions button')) {
+    if (S.updating) {
+      if (!control.hasAttribute('data-update-disabled')) control.dataset.updateDisabled = control.disabled ? '1' : '0';
+      control.disabled = true;
+    } else if (control.hasAttribute('data-update-disabled')) {
+      control.disabled = control.dataset.updateDisabled === '1';
+      delete control.dataset.updateDisabled;
+    }
+  }
+}
 function lockControls() {
-  const locked = S.busy || S.saving || !S.ready;
+  const locked = S.busy || S.saving || S.updating || !S.ready;
   $('#test-generate').disabled = locked || !S.savedVariants.length;
   $('#compare-generate').disabled = locked || !S.variants.length;
   $('#test-variant').disabled = locked;
@@ -106,6 +119,8 @@ function lockControls() {
   for (const control of document.querySelectorAll('.variant input, .variant select, .variant textarea, .variant button')) control.disabled = locked;
   for (const button of document.querySelectorAll('.clone-variant')) button.disabled = locked || S.variants.length >= 6;
   for (const button of document.querySelectorAll('.remove-variant')) button.disabled = locked || S.variants.length === 1;
+  freezeUpdateControls();
+  renderUpdateControls();
 }
 function renderSelection() {
   const select = $('#test-variant'); select.replaceChildren();
@@ -191,7 +206,7 @@ function renderVariants() {
   updateConsent(); lockControls();
 }
 async function saveVariants() {
-  if (S.saving || S.busy) return;
+  if (S.saving || S.busy || S.updating) return;
   S.saving = true; lockControls(); updateSaveState('正在保存…');
   try {
     const selected = S.variants.some(item => item.uid === S.selected) ? S.selected : S.variants[0].uid;
@@ -202,6 +217,7 @@ async function saveVariants() {
   finally { S.saving = false; lockControls(); }
 }
 async function selectVariant() {
+  if (S.updating) return;
   const previous = S.selected; S.selected = $('#test-variant').value; S.saving = true; renderSelection();
   try { await api('/api/variants', {method: 'PUT', body: JSON.stringify({variants: S.savedVariants, selected_uid: S.selected})}); }
   catch (error) { S.selected = previous; renderSelection(); notice(`无法保存所选方案：${error.message}`, true); }
@@ -256,10 +272,11 @@ function renderResults(page) {
         notes.value = session.drafts[run.id]?.notes ?? run.scores?.notes ?? ''; notes.setAttribute('aria-label', '听感笔记'); card.append(notes);
         const actions = el('div', undefined, 'score-actions'), saved = el('span', run.scores ? '评分已保存' : ''), save = el('button', '保存评分', 'secondary');
         save.onclick = async () => {
+          if (S.updating) return;
           if (Object.values(inputs).some(input => !input.value)) { saved.textContent = '请完成四项评分'; return; }
           save.disabled = true;
           try { const data = await api(`/api/runs/${run.id}/score`, {method: 'POST', body: JSON.stringify({...Object.fromEntries(Object.entries(inputs).map(([key, input]) => [key, Number(input.value)])), notes: notes.value})}); run.scores = data.scores; session.drafts[run.id] = data.scores; saved.textContent = '评分已保存'; }
-          catch (error) { saved.textContent = error.message; } finally { save.disabled = false; }
+          catch (error) { saved.textContent = error.message; } finally { save.disabled = false; if (save.hasAttribute('data-update-disabled')) save.dataset.updateDisabled = '0'; freezeUpdateControls(); }
         };
         actions.append(save, saved); card.append(actions);
       }
@@ -268,6 +285,7 @@ function renderResults(page) {
   });
   session.order.forEach((id, index) => { const node = root.querySelector(`[data-run="${id}"]`); if (node && root.children[index] !== node) root.insertBefore(node, root.children[index] || null); });
   resultUI(page, '.exports').hidden = false; resultUI(page, '.download-batch').href = `/api/batches/${session.batch}/download`;
+  freezeUpdateControls();
 }
 function finishRun(page) {
   S.busy = false; $(`#${page}-generate`).textContent = page === 'test' ? '▷ 生成语音' : '生成并对比 →'; renderVariants();
@@ -285,7 +303,7 @@ async function poll(page, batchId) {
   } catch (error) { finishRun(page); notice(`${error.message} 已停止轮询，任务可能仍在后台完成，请从历史记录查看，避免重复调用。`, true); }
 }
 async function generate(page) {
-  if (S.busy || S.saving || !S.ready) return;
+  if (S.busy || S.saving || S.updating || !S.ready) return;
   notice(''); const text = $(page === 'test' ? '#text' : '#compare-text').value.trim();
   if (!text) { notice('请先输入要朗读的文本。', true); return; }
   const variants = page === 'test' ? S.savedVariants.filter(item => item.uid === S.selected) : S.variants;
@@ -327,6 +345,102 @@ function renderServices() {
     const card = el('div', undefined, 'service-item'); card.append(el('b', item.name), el('span', item.ready ? '● 已检测到配置' : '○ 尚未配置', item.ready ? 'available' : '')); root.append(card);
   }
 }
+function renderUpdateControls() {
+  const view = U.view;
+  if (!view) return;
+  const active = U.pending || ['checking', 'downloading', 'installing'].includes(view.status);
+  const development = view.distribution === 'development';
+  $('#check-app-update').disabled = active;
+  $('#check-app-update').textContent = view.status === 'checking' ? '正在检查…' : view.status === 'error' && !view.version ? '重试检查' : '检查更新';
+  const download = $('#download-app-update'), install = $('#install-app-update');
+  download.hidden = development || !view.version || !['available', 'error'].includes(view.status);
+  download.disabled = active;
+  download.textContent = view.status === 'error' ? '重试下载' : '下载更新';
+  install.hidden = development || !['ready', 'installing'].includes(view.status);
+  install.disabled = active || S.busy || S.saving || S.modelBusy;
+  install.textContent = view.status === 'installing' ? '正在安装…' : '安装并重启';
+  $('#app-update-install-hint').textContent = development
+    ? '开发环境仅检查版本，请从发布页下载安装。'
+    : view.status === 'ready' && (S.busy || S.saving || S.modelBusy)
+      ? '请等待语音生成、方案保存或模型安装完成，再安装更新。个人数据会保留。'
+      : '安装会关闭应用、更新程序并重新启动；个人配置、本地模型和历史音频会保留。';
+}
+function renderUpdateView(view) {
+  if (!view || typeof view.status !== 'string') return;
+  U.view = view;
+  const installing = view.status === 'installing';
+  if (S.updating !== installing) { S.updating = installing; lockControls(); }
+  const version = view.version ? `v${view.version}` : '';
+  const labels = {
+    idle: '尚未检查更新。', checking: '正在检查新版本…', current: '当前已是最新版本。',
+    available: `发现新版本 ${version}，可下载后安装。`, downloading: `正在下载 ${version}，请保持应用打开。`,
+    ready: `${version} 已下载并校验完成，可以安装。`, installing: '正在退出并安装更新，请稍候…',
+    error: view.error || '更新未完成，请检查网络后重试。',
+  };
+  const status = $('#app-update-status');
+  status.textContent = labels[view.status] || '无法读取更新状态，请重新检查。';
+  status.classList.toggle('error', view.status === 'error');
+  $('#app-update-version').textContent = `当前 ${view.current_version ? `v${view.current_version}` : $('.version').textContent} · ${{installed: '安装版', portable: '便携版', development: '开发环境'}[view.distribution] || '桌面版'}`;
+  const downloaded = Math.max(0, Number(view.downloaded_bytes) || 0), total = Math.max(0, Number(view.total_bytes) || 0);
+  const bytes = value => value >= 1048576 ? `${(value / 1048576).toFixed(1)} MiB` : value >= 1024 ? `${(value / 1024).toFixed(1)} KiB` : `${value} B`;
+  $('#app-update-progress-wrap').hidden = !['downloading', 'ready'].includes(view.status) && !downloaded;
+  const progress = $('#app-update-progress');
+  if (total > 0) { progress.max = total; progress.value = Math.min(downloaded, total); }
+  else progress.removeAttribute('value');
+  $('#app-update-bytes').textContent = total > 0 ? `${bytes(downloaded)} / ${bytes(total)}` : `${bytes(downloaded)} 已下载`;
+  $('#app-update-notes-wrap').hidden = !view.notes;
+  $('#app-update-notes').textContent = typeof view.notes === 'string' ? view.notes : '';
+  const shortcut = $('#updates-shortcut');
+  shortcut.textContent = view.status === 'ready' ? '更新已就绪 ↗' : view.version && ['available', 'downloading'].includes(view.status) ? `新版本 ${version} ↗` : '应用更新 ↗';
+  renderUpdateControls();
+}
+function updateStorage(key, value) {
+  try {
+    if (value === undefined) return localStorage.getItem(key);
+    localStorage.setItem(key, value);
+  } catch { /* Storage can be disabled; manual checks remain available. */ }
+  return null;
+}
+async function updateAction(action) {
+  if (U.pending || ['checking', 'downloading', 'installing'].includes(U.view?.status)) return;
+  if (action === 'installUpdate' && (U.view?.status !== 'ready' || S.busy || S.saving || S.modelBusy)) return;
+  U.pending = true;
+  if (action === 'checkUpdate') updateStorage('ttsLab.updates.lastCheckAt', String(Date.now()));
+  renderUpdateView({...U.view, status: {checkUpdate: 'checking', downloadUpdate: 'downloading', installUpdate: 'installing'}[action], error: ''});
+  try {
+    const view = await window.ttsDesktop[action]();
+    if (view?.status) renderUpdateView(view);
+    else renderUpdateView(await window.ttsDesktop.getUpdateState());
+  } catch (error) {
+    const message = typeof error === 'string' ? error : error?.message;
+    renderUpdateView({...U.view, status: 'error', error: message || '更新未完成，请检查网络后重试。'});
+  } finally { U.pending = false; renderUpdateControls(); }
+}
+async function setupUpdates() {
+  const desktop = window.ttsDesktop;
+  if (!desktop?.getUpdateState) return;
+  $('#app-update-panel').hidden = false; $('#updates-shortcut').hidden = false;
+  $('#updates-shortcut').onclick = () => { setPage('models'); $('#app-update-panel').scrollIntoView({block: 'start', behavior: 'smooth'}); $('#app-update-title').focus({preventScroll: true}); };
+  const auto = $('#app-update-auto');
+  auto.checked = updateStorage('ttsLab.updates.autoCheck') !== '0';
+  auto.onchange = () => updateStorage('ttsLab.updates.autoCheck', auto.checked ? '1' : '0');
+  $('#check-app-update').onclick = () => updateAction('checkUpdate');
+  $('#download-app-update').onclick = () => updateAction('downloadUpdate');
+  $('#install-app-update').onclick = () => updateAction('installUpdate');
+  renderUpdateView({status: 'idle', downloaded_bytes: 0, total_bytes: 0});
+  let revision = 0;
+  desktop.onUpdateState(view => { revision++; renderUpdateView(view); });
+  try {
+    const initialRevision = revision;
+    const view = await desktop.getUpdateState();
+    if (revision === initialRevision && !U.pending) renderUpdateView(view);
+    const now = Date.now(), last = Number(updateStorage('ttsLab.updates.lastCheckAt')) || 0;
+    if (window.__TTS_UPDATES_AUTO__ === true && auto.checked && ['idle', 'current'].includes(U.view.status) &&
+        (last > now || now - last >= 86400000)) void updateAction('checkUpdate');
+  } catch (error) {
+    renderUpdateView({...U.view, status: 'error', error: '无法读取更新状态，请重新检查更新。'});
+  }
+}
 async function setupDesktop() {
   if (!window.ttsDesktop) return;
   $('#window-controls').hidden = false; $('#desktop-settings').hidden = false;
@@ -335,8 +449,8 @@ async function setupDesktop() {
   $('#window-minimize').onclick = desktopAction(() => window.ttsDesktop.minimize());
   $('#window-maximize').onclick = desktopAction(() => window.ttsDesktop.toggleMaximize());
   $('#window-close').onclick = desktopAction(() => window.ttsDesktop.close());
-  $('#edit-credentials').onclick = desktopAction(() => window.ttsDesktop.editCredentials());
-  $('#restart-app').onclick = desktopAction(() => window.ttsDesktop.restart());
+  $('#edit-credentials').onclick = desktopAction(() => { if (!S.updating) return window.ttsDesktop.editCredentials(); });
+  $('#restart-app').onclick = desktopAction(() => { if (!S.updating) return window.ttsDesktop.restart(); });
   $('#open-data-directory').onclick = desktopAction(() => window.ttsDesktop.openDataDirectory());
   const updateWindowState = state => {
     const button = $('#window-maximize'), label = state.maximized ? '还原' : '最大化';
@@ -349,6 +463,7 @@ async function setupDesktop() {
 async function init() {
   window.addEventListener('tts-desktop-error', event => notice(event.detail, true));
   try { await setupDesktop(); } catch { notice('无法读取窗口状态，请稍后重试。', true); }
+  void setupUpdates();
   for (const button of document.querySelectorAll('.nav-button')) button.onclick = () => setPage(button.dataset.page);
   $('#manage-variants').onclick = () => setPage('compare');
   for (const page of ['test', 'compare']) {
@@ -382,6 +497,7 @@ async function init() {
 }
 let modelTimer;
 async function modelAction(id, action) {
+  if (S.updating) return;
   $('#model-notice').textContent = '';
   try {
     if (action === 'delete') {
@@ -403,6 +519,7 @@ async function refreshModels() {
     const root = $('#local-model-list');
     root.replaceChildren();
     const busy = data.models.some(m => m.busy);
+    S.modelBusy = busy; renderUpdateControls();
     for (const model of data.models) {
       const card = el('article', undefined, 'model-card');
       card.dataset.model = model.id;
@@ -440,6 +557,7 @@ async function refreshModels() {
       actions.append(docs, el('span', model.license, 'hint'));
       card.append(actions); root.append(card);
     }
+    freezeUpdateControls();
     const state = await api('/api/state');
     const changed = JSON.stringify(S.providers) !== JSON.stringify(state.providers);
     S.providers = state.providers;
@@ -451,6 +569,7 @@ async function refreshModels() {
   }
 }
 async function uploadReference(file, variant) {
+  if (S.updating) return;
   if (file.size > 2 * 1024 * 1024) { notice('参考录音超过 2 MB，请使用 3–10 秒 WAV。', true); return; }
   try {
     const ref = await api('/api/references?name=' + encodeURIComponent(file.name), {

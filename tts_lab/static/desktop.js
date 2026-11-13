@@ -11,6 +11,27 @@
   const report = message => window.dispatchEvent(new CustomEvent('tts-desktop-error', {detail: message}));
   const action = name => tauri.core.invoke('desktop_action', {action: name});
 
+  function subscribe(name, callback, normalize, errorMessage) {
+    if (typeof callback !== 'function') return () => {};
+    let disposed = false, unlisten;
+    tauri.event.listen(name, event => {
+      if (!disposed) callback(normalize(event.payload));
+    }).then(stop => { if (disposed) stop(); else unlisten = stop; })
+      .catch(() => report(errorMessage));
+    return () => { disposed = true; unlisten?.(); };
+  }
+
+  function updateView(value = {}) {
+    const view = {};
+    for (const key of ['status', 'current_version', 'version', 'notes', 'error', 'distribution']) {
+      if (typeof value?.[key] === 'string') view[key] = value[key];
+    }
+    for (const key of ['downloaded_bytes', 'total_bytes']) {
+      view[key] = Number.isFinite(value?.[key]) && value[key] >= 0 ? value[key] : 0;
+    }
+    return view;
+  }
+
   function apiRoute(value) {
     if (typeof value !== 'string' || !value.startsWith('/api/') || /[\\\x00-\x20\x7f]/.test(value)) throw new Error('无效的本机服务地址。');
     const parsed = new URL(value, 'https://tts.invalid');
@@ -31,15 +52,14 @@
     editCredentials: () => action('editCredentials'),
     restart: () => action('restart'),
     openDataDirectory: () => action('openDataDirectory'),
-    onWindowState: callback => {
-      if (typeof callback !== 'function') return () => {};
-      let disposed = false, unlisten;
-      tauri.event.listen('desktop:window-state', event => {
-        if (!disposed) callback({maximized: !!event.payload?.maximized});
-      }).then(stop => { if (disposed) stop(); else unlisten = stop; })
-        .catch(() => report('无法更新窗口状态，请稍后重试。'));
-      return () => { disposed = true; unlisten?.(); };
-    },
+    getUpdateState: () => tauri.core.invoke('get_update_state'),
+    checkUpdate: () => tauri.core.invoke('check_update'),
+    downloadUpdate: () => tauri.core.invoke('download_update'),
+    installUpdate: () => tauri.core.invoke('install_update'),
+    onWindowState: callback => subscribe('desktop:window-state', callback,
+      value => ({maximized: !!value?.maximized}), '无法更新窗口状态，请稍后重试。'),
+    onUpdateState: callback => subscribe('desktop:update-state', callback,
+      updateView, '无法读取更新进度，请重新检查更新。'),
   };
   Object.defineProperty(window, 'ttsDesktop', {value: Object.freeze(bridge)});
 

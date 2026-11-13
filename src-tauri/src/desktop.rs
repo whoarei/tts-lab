@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Mutex,
+        Mutex, RwLock,
     },
     thread,
     time::Duration,
@@ -17,13 +17,14 @@ use std::{
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
-struct AppState {
-    backend: Mutex<Backend>,
-    proxy: Proxy,
+pub(crate) struct AppState {
+    pub(crate) backend: Mutex<Backend>,
+    pub(crate) proxy: Proxy,
     profile: PathBuf,
-    quitting: AtomicBool,
-    allow_exit: AtomicBool,
-    smoke: bool,
+    pub(crate) quitting: AtomicBool,
+    pub(crate) allow_exit: AtomicBool,
+    pub(crate) smoke: bool,
+    pub(crate) write_gate: RwLock<()>,
     smoke_output: Option<PathBuf>,
     _temporary_profile: Option<tempfile::TempDir>,
 }
@@ -48,7 +49,7 @@ fn bundled_origin(url: &tauri::Url) -> bool {
         && url.password().is_none()
 }
 
-fn check_window(window: &WebviewWindow) -> Result<(), String> {
+pub(crate) fn check_window(window: &WebviewWindow) -> Result<(), String> {
     if window.label() != "main" || !bundled_origin(&window.url().map_err(|_| "拒绝桌面操作。")?)
     {
         return Err("拒绝桌面操作。".into());
@@ -342,6 +343,15 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let token: String = secret.iter().map(|byte| format!("{byte:02x}")).collect();
     let backend = Backend::start(&python, &script, &profile, &config, token.clone())?;
     let proxy = Proxy::new(backend.origin.clone(), token)?;
+    let update_manager = crate::desktop_updates::UpdateManager::new(
+        env::current_exe()?
+            .parent()
+            .ok_or("无效的程序目录。")?
+            .to_path_buf(),
+        &profile,
+    );
+    let auto_updates = !smoke && update_manager.auto_check_supported();
+    app.manage(update_manager);
     app.manage(AppState {
         backend: Mutex::new(backend),
         proxy,
@@ -349,6 +359,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         quitting: AtomicBool::new(false),
         allow_exit: AtomicBool::new(false),
         smoke,
+        write_gate: RwLock::new(()),
         smoke_output,
         _temporary_profile: temporary,
     });
@@ -358,8 +369,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         "tts-api://localhost"
     };
     let init = format!(
-        "Object.defineProperty(window,'__TTS_API_ORIGIN__',{{value:{}}});",
-        serde_json::to_string(api_origin)?
+        "Object.defineProperty(window,'__TTS_API_ORIGIN__',{{value:{}}});Object.defineProperty(window,'__TTS_UPDATES_AUTO__',{{value:{}}});",
+        serde_json::to_string(api_origin)?, auto_updates
     );
     let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("TTS Lab")
@@ -458,14 +469,55 @@ pub fn run() {
                 );
                 return;
             }
-            let proxy = context.app_handle().state::<AppState>().proxy.clone();
-            tauri::async_runtime::spawn_blocking(move || responder.respond(proxy.forward(request)));
+            let handle = context.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let state = handle.state::<AppState>();
+                let mutation = !matches!(
+                    *request.method(),
+                    http::Method::GET | http::Method::HEAD | http::Method::OPTIONS
+                );
+                // A mutation holds this permit through the Python response.
+                // Installation takes the exclusive permit before checking jobs.
+                let permit = if mutation && !state.quitting.load(Ordering::SeqCst) {
+                    Some(state.write_gate.read().unwrap_or_else(|e| e.into_inner()))
+                } else {
+                    None
+                };
+                if mutation && (permit.is_none() || state.quitting.load(Ordering::SeqCst)) {
+                    responder.respond(
+                        http::Response::builder()
+                            .status(503)
+                            .header("content-type", "application/json")
+                            .header(
+                                "access-control-allow-origin",
+                                if cfg!(windows) {
+                                    "http://tauri.localhost"
+                                } else {
+                                    "tauri://localhost"
+                                },
+                            )
+                            .body(
+                                r#"{"detail":"应用正在准备更新或重启，请稍后重试。"}"#
+                                    .as_bytes()
+                                    .to_vec(),
+                            )
+                            .unwrap(),
+                    );
+                } else {
+                    responder.respond(state.proxy.forward(request));
+                }
+                drop(permit);
+            });
         })
         .invoke_handler(tauri::generate_handler![
             desktop_action,
             save_export,
             open_documentation,
-            smoke_report
+            smoke_report,
+            crate::desktop_updates::get_update_state,
+            crate::desktop_updates::check_update,
+            crate::desktop_updates::download_update,
+            crate::desktop_updates::install_update,
         ])
         .setup(setup);
     match builder.build(tauri::generate_context!()) {

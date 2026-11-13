@@ -72,6 +72,15 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     document.querySelector('[data-page=models]').click();
     await wait(() => document.querySelectorAll('.model-card').length === 6, 'Model page failed');
+    const updateState = await invoke('get_update_state');
+    assert(updateState.current_version === state.version && ['installed', 'portable'].includes(updateState.distribution), 'Native update state mismatch');
+    assert(window.__TTS_UPDATES_AUTO__ === false, 'Offline native smoke must not auto-check public updates');
+    for (const command of ['check_update', 'download_update', 'install_update']) {
+      let rejected = false; try { await invoke(command); } catch { rejected = true; }
+      assert(rejected, 'Offline smoke accepted an online update operation');
+    }
+    assert((await api('/api/activity')).ok, 'Rejected update must leave backend running');
+    checks.push('native update state and offline-operation boundary');
     checks.push('native ZIP CSV and audio exports', 'native command allowlists', 'model configuration page');
     await invoke('smoke_report', {report: {status: 'passed', checks, cloudRequests: 0}});
   } catch (error) {

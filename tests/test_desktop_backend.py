@@ -88,7 +88,7 @@ class DesktopGuardTests(unittest.IsolatedAsyncioTestCase):
     async def test_every_route_requires_desktop_token(self):
         with patch.object(module, "DESKTOP", True), patch.object(module, "DESKTOP_TOKEN", "t" * 40):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=module.app), base_url="http://127.0.0.1:8765") as client:
-                for route in ["/", "/static/app.js", "/api/state", "/api/runs", "/api/local-models", "/api/export.csv", "/missing"]:
+                for route in ["/", "/static/app.js", "/api/state", "/api/activity", "/api/runs", "/api/local-models", "/api/export.csv", "/missing"]:
                     self.assertEqual((await client.get(route)).status_code, 403, route)
                     self.assertEqual((await client.get(route, headers={"X-Desktop-Token": "wrong"})).status_code, 403)
                 state = await client.get("/api/state", headers={"X-Desktop-Token": "t" * 40})

@@ -251,6 +251,7 @@ mod tests {
         assert_eq!(state.status(), 200);
         let state: serde_json::Value = serde_json::from_slice(state.body()).unwrap();
         assert!(!proxy.has_pending_jobs().unwrap());
+        assert!(!proxy.has_active_work().unwrap());
         let request = http::Request::builder()
             .uri("tts-api://localhost/api/batches")
             .method("POST")
@@ -297,6 +298,7 @@ mod tests {
         assert_eq!(range.status(), 206);
         assert_eq!(range.body().len(), 16);
         assert!(range.headers().get("content-range").is_some());
+        assert!(!proxy.has_active_work().unwrap());
         backend.stop();
         assert!(!backend.is_running());
         assert!(profile
@@ -316,6 +318,7 @@ mod tests {
         assert!(reopened.is_running());
         let reopened_proxy =
             crate::proxy::Proxy::new(reopened.origin.clone(), "u".repeat(64)).unwrap();
+        assert!(!reopened_proxy.has_active_work().unwrap());
         let history = reopened_proxy.forward(
             http::Request::builder()
                 .uri("tts-api://localhost/api/runs")

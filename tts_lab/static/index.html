@@ -26,7 +26,7 @@
         <button class="nav-button" data-page="compare" aria-controls="page-compare" title="方案对比"><svg viewBox="0 0 24 24"><path d="M4 5h6v14H4zM14 5h6v14h-6zM7 8v8M17 8v8"/></svg><span>方案对比</span></button>
         <button class="nav-button" data-page="models" aria-controls="page-models" title="模型配置"><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></svg><span>模型配置</span></button>
       </nav>
-      <div class="sidebar-bottom"><span class="privacy-icon">⌂</span><div>声音在此，灵感发生。<small>配置与音频保存在本机</small></div><span class="version">v0.6.0</span></div>
+      <div class="sidebar-bottom"><span class="privacy-icon">⌂</span><div>声音在此，灵感发生。<small>配置与音频保存在本机</small></div><span class="version">v0.7.0</span><button id="updates-shortcut" class="text-button" hidden>应用更新 ↗</button></div>
     </aside>
     <main id="main-content">
       <div id="notice" role="status" aria-live="polite" hidden></div>
@@ -57,6 +57,16 @@
       <section id="page-models" class="page" hidden aria-labelledby="models-title">
         <div class="page-heading"><div><div class="eyebrow">MODELS & SERVICES</div><h1 id="models-title" tabindex="-1">模型配置</h1><p>下载本地模型，或连接你自己的云端语音服务。</p></div></div>
         <section class="panel credentials-panel"><div><h2>云服务凭证</h2><p id="config-guide">在项目根目录将 .env.example 复制为 .env，填写所需服务密钥，保存后重启程序。</p></div><div id="desktop-settings" class="settings-actions" hidden><button id="edit-credentials" class="secondary">编辑 API 凭证</button><button id="restart-app" class="secondary">重启并载入凭证</button><button id="open-data-directory" class="text-button">打开配置目录 ↗</button></div><p class="hint">凭证仅在本机文件中保存，界面不会显示密钥。检测到配置不代表账号与模型权限已验证。</p><div id="cloud-services" class="service-grid"></div></section>
+        <section id="app-update-panel" class="panel update-panel" aria-labelledby="app-update-title" hidden>
+          <div class="section-title"><h2 id="app-update-title" tabindex="-1">应用更新</h2><span id="app-update-version"></span><button id="check-app-update" class="secondary push">检查更新</button></div>
+          <p id="app-update-status" class="hint" role="status" aria-live="polite">尚未检查更新。</p>
+          <div id="app-update-progress-wrap" hidden><progress id="app-update-progress" aria-label="应用更新下载进度"></progress><p id="app-update-bytes" class="hint"></p></div>
+          <details id="app-update-notes-wrap" hidden><summary>版本说明</summary><pre id="app-update-notes"></pre></details>
+          <div class="settings-actions"><button id="download-app-update" class="secondary" hidden>下载更新</button><button id="install-app-update" class="primary" hidden>安装并重启</button><a href="https://github.com/whoarei/tts-lab/releases" target="_blank" rel="noreferrer" class="text-button">查看发布页 ↗</a></div>
+          <p id="app-update-install-hint" class="hint">安装会关闭应用、更新程序并重新启动；个人配置、本地模型和历史音频会保留。</p>
+          <label class="check update-auto"><input id="app-update-auto" type="checkbox" checked>启动时检查更新（每天最多一次，不自动下载或安装）</label>
+          <p class="hint">检查与下载更新需要联网。</p>
+        </section>
         <section id="local-model-panel" class="panel model-panel" aria-labelledby="model-panel-title"><div class="section-title"><h2 id="model-panel-title">本地离线模型</h2><span>下载一次，离线使用</span></div><p class="hint">无需 API Key。首次同时下载独立 Python 和推理依赖，请预留空间并保持程序打开。推荐先试 Kokoro + CPU。</p><label class="model-device">运行设备<select id="local-device"><option value="cpu">CPU · 无需独立显卡</option><option value="cuda">NVIDIA GPU · 需要兼容驱动（GLM-TTS 必需，Kokoro 使用 CPU）</option></select></label><p id="model-notice" role="status" aria-live="polite"></p><div id="local-model-list" class="model-grid"></div><p class="hint">模型来自官方 Hugging Face 仓库或 sherpa-onnx 发布包，下载需联网。安装后会离线试生成，通过才显示可用。Qwen 与 CosyVoice 在 CPU 上可能需要数分钟，生成时文本不发送到云端。</p></section>
         <details class="panel help-panel"><summary>使用提示</summary><div class="guide-columns"><div><h3>先确认声音可用</h3><p>离线测试音只用于检查播放和导出，不朗读文字。下载模型或配置云服务后才能生成真实人声。</p></div><div><h3>让比较更公平</h3><p>固定文本，一次只改一个参数。开启盲听隐藏服务名称，听完评分后再揭晓。</p></div><div><h3>理解生成耗时</h3><p>耗时包含完整请求与模型加载，不是首包延迟。云端失败不自动重试，重新调用可能再次收费。</p></div></div></details>
       </section>
