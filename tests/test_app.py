@@ -50,6 +50,25 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(ids), 18)
         self.assertTrue({'mimo', 'doubao', 'stepfun', 'fish', 'local_indextts', 'local_glmtts', 'local_kokoro', 'local_qwen3', 'local_cosyvoice'}.issubset(ids))
 
+    async def test_update_activity_counts_work_without_returning_history_or_text(self):
+        finished = asyncio.create_task(asyncio.sleep(0))
+        await finished
+        waiting = asyncio.create_task(asyncio.sleep(60))
+        try:
+            with patch.object(module, 'JOBS', {'old': {'status': 'completed', 'text': 'private text'},
+                                             'active': {'status': 'running', 'text': 'private text'}}), \
+                 patch.object(module.local_models, 'TASKS', {'working': waiting, 'finished': finished}):
+                response = await self.client.get('/api/activity')
+                self.assertEqual(response.json(), {'busy': True, 'active_runs': 1, 'active_installs': 1})
+                self.assertNotIn('private text', response.text)
+            with patch.object(module, 'JOBS', {'old': {'status': 'failed'}}), \
+                 patch.object(module.local_models, 'TASKS', {'finished': finished}):
+                self.assertEqual((await self.client.get('/api/activity')).json(),
+                                 {'busy': False, 'active_runs': 0, 'active_installs': 0})
+        finally:
+            waiting.cancel()
+            await asyncio.gather(waiting, return_exceptions=True)
+
     async def test_demo_end_to_end_audio_zip_csv_history(self):
         response = await self.send({"text": "你好 world", "variants": [
             {"provider": "demo", "params": {"frequency": 440}},

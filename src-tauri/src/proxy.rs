@@ -166,6 +166,33 @@ impl Proxy {
         request.body(body).send().map_err(|_| REQUEST_ERROR.into())
     }
 
+    pub fn has_active_work(&self) -> Result<bool, String> {
+        let response = self
+            .client
+            .get(format!("{}/api/activity", self.origin))
+            .header("X-Desktop-Token", &self.token)
+            .header(header::ORIGIN, &self.origin)
+            .timeout(Duration::from_millis(2500))
+            .send()
+            .map_err(|_| REQUEST_ERROR)?;
+        if response.status() != StatusCode::OK {
+            return Err(REQUEST_ERROR.into());
+        }
+        let mut bytes = Vec::new();
+        response
+            .take(4097)
+            .read_to_end(&mut bytes)
+            .map_err(|_| REQUEST_ERROR)?;
+        if bytes.len() > 4096 {
+            return Err(REQUEST_ERROR.into());
+        }
+        let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| REQUEST_ERROR)?;
+        value
+            .get("busy")
+            .and_then(|v| v.as_bool())
+            .ok_or_else(|| REQUEST_ERROR.into())
+    }
+
     pub fn has_pending_jobs(&self) -> Result<bool, String> {
         // Closing an unavailable service must not stall the desktop for the
         // longer export timeout. This fixed route cannot be supplied by JS.

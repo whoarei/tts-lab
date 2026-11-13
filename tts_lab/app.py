@@ -198,7 +198,16 @@ async def generate(run: dict):
 
 @app.get("/api/state")
 def state():
-    return {"token": TOKEN, "providers": public_catalog(), "references": reference_audio.list_references(), "version": "0.6.0", "desktop": DESKTOP}
+    return {"token": TOKEN, "providers": public_catalog(), "references": reference_audio.list_references(), "version": "0.7.0", "desktop": DESKTOP}
+
+
+@app.get('/api/activity')
+def activity():
+    """Small snapshot for the desktop's update gate; never return job content."""
+    runs = max(sum(run.get('status') in {'queued', 'running'} for run in list(JOBS.values())),
+               sum(not task.done() for task in list(TASKS)))
+    installs = sum(not task.done() for task in list(local_models.TASKS.values()))
+    return {'busy': bool(runs or installs), 'active_runs': runs, 'active_installs': installs}
 
 
 @app.post('/api/references', status_code=201)

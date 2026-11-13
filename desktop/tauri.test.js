@@ -9,7 +9,8 @@ const id = 'a'.repeat(32);
 
 function harness({native = true, origin = 'http://tts-api.localhost'} = {}) {
   const calls = [], errors = [], listeners = new Map();
-  let windowState, stopCount = 0, rejectCommand;
+  const subscriptions = new Map();
+  let stopCount = 0, rejectCommand;
   const window = {
     __TTS_API_ORIGIN__: origin,
     dispatchEvent: event => errors.push(event.detail),
@@ -21,14 +22,15 @@ function harness({native = true, origin = 'http://tts-api.localhost'} = {}) {
       return {maximized: false};
     }},
     event: {listen: async (name, callback) => {
-      assert.equal(name, 'desktop:window-state'); windowState = callback;
+      assert.ok(['desktop:window-state', 'desktop:update-state'].includes(name)); subscriptions.set(name, callback);
       return () => { stopCount++; };
     }},
   };
   vm.runInNewContext(source, {window, document: {addEventListener: (name, callback) => listeners.set(name, callback)},
     URL, CustomEvent: class { constructor(name, options) { this.type = name; this.detail = options.detail; } }});
   return {window, calls, errors, listeners,
-    state: payload => windowState({payload}), stops: () => stopCount,
+    state: payload => subscriptions.get('desktop:window-state')({payload}),
+    update: payload => subscriptions.get('desktop:update-state')({payload}), stops: () => stopCount,
     reject: name => { rejectCommand = name; },
     click: href => {
       let prevented = false;
@@ -78,6 +80,34 @@ test('window state listeners sanitize payloads and dispose even before registrat
   assert.equal(h.stops(), 1);
   h.state({maximized: false});
   assert.equal(state.maximized, true);
+});
+
+test('updater commands are fixed and never forward caller-supplied URLs or paths', async () => {
+  const h = harness(), bridge = h.window.ttsDesktop;
+  for (const [method, command] of [['getUpdateState', 'get_update_state'], ['checkUpdate', 'check_update'],
+    ['downloadUpdate', 'download_update'], ['installUpdate', 'install_update']]) {
+    await bridge[method]({url: 'https://example.com/unsigned.exe', path: '/private'});
+    assert.equal(h.calls.at(-1).command, command);
+    assert.equal(h.calls.at(-1).args, undefined);
+  }
+  assert.equal(bridge.update, undefined);
+});
+
+test('updater events expose only display fields and support early disposal', async () => {
+  const h = harness(); let view;
+  const stop = h.window.ttsDesktop.onUpdateState(value => { view = value; });
+  h.update({status: 'downloading', current_version: '0.6.0', version: '0.7.0', notes: '<b>plain text</b>',
+    downloaded_bytes: 1024, total_bytes: 4096, distribution: 'portable',
+    url: 'https://example.com/unsigned.exe', path: '/private', secret: 'not forwarded'});
+  assert.equal(view.status, 'downloading'); assert.equal(view.downloaded_bytes, 1024);
+  assert.equal(view.notes, '<b>plain text</b>'); assert.equal(view.url, undefined);
+  assert.equal(view.path, undefined); assert.equal(view.secret, undefined);
+  h.update({status: 'error', error: '请等待模型安装完成', downloaded_bytes: -1, total_bytes: NaN});
+  assert.equal(view.error, '请等待模型安装完成'); assert.equal(view.downloaded_bytes, 0); assert.equal(view.total_bytes, 0);
+  stop(); await Promise.resolve();
+  assert.equal(h.stops(), 1);
+  h.update({status: 'installing'});
+  assert.equal(view.status, 'error');
 });
 
 test('native downloads pass original export routes to Save As without navigating', async () => {

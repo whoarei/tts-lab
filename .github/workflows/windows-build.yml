@@ -1,6 +1,8 @@
 name: Build Windows installer and portable release
 on:
   workflow_dispatch:
+  pull_request:
+    branches: ['main']
   push:
     branches: ['tauri-migration']
     tags: ['v*']
@@ -127,6 +129,11 @@ jobs:
           $result = Get-Content $report -Raw | ConvertFrom-Json
           if ($result.status -ne 'passed') { throw "Desktop smoke report did not pass" }
           Get-Content $report
+      - name: Check native online update application and user-file preservation
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          ./scripts/check_windows_updates.ps1 -Bundle "dist/TTS-Lab-$version-win-x64" -Installer "dist/TTS-Lab-$version-win-x64-setup.exe" -PortableZIP "dist/TTS-Lab-$version-win-x64.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: TTS-Lab-Windows-x64
@@ -157,21 +164,38 @@ jobs:
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
           本次更新：
-          - 桌面壳迁移至 Tauri 2，复用系统 WebView2，保留 Python 语音后端。
-          - 保留方案、凭证、历史音频、本地模型和参考录音的数据目录。
-          - 保留文本测试、方案对比、模型配置及所有已有 TTS 服务接入。
+          - 新增桌面应用在线更新：可手动检查，默认启动时每天最多检查一次，可关闭自动检查。
+          - 检查不会自动下载或安装；点击下载并通过长度与 SHA256 校验后，可在任务结束时安装并重启。
+          - 安装版通过安装器升级，便携版原地替换应用文件，保留方案、凭证、历史音频、本地模型与其他用户文件。
+          - 沿用 0.6.0 的方案、历史与模型数据格式和用户目录，保留 Tauri 2 桌面、Python 后端及所有已有 TTS 服务接入。
 
           下载与安装：
           - setup.exe：Windows 10/11 x64 当前用户安装；已有 WebView2 时直接复用，缺少时需联网安装 Microsoft WebView2。
           - win-x64.zip：完整解压后运行 TTS Lab.exe，需已安装 Microsoft WebView2 Evergreen Runtime；保留旁边所有文件。
           - 两种版本均包含 Python 和应用依赖；本地人声模型与推理环境按需另行下载，升级保留个人配置和历史。
           - exe.sha256 / zip.sha256：对应下载文件的 SHA256 校验值。
+          - 已发布的 0.6.0 没有在线更新功能，需先手动安装本版本一次；之后可从“模型配置”的“应用更新”中升级。
+          - 更新源为本项目 GitHub Release，使用 HTTPS 与 SHA256；当前发布渠道没有独立更新签名。
 
-          验证：Windows 工作流执行 Rust 测试、Tauri release 编译、安装器编译、锁定依赖及包完整性校验，使用包内 Python 验证后端、离线 WAV 和参考录音存储，并执行原生桌面离线冒烟检查。真实云端调用、完整 GPU 推理和用户交互式安装/升级/卸载体验仍需单独验证。云端调用可能收费；离线测试音不是人声。应用未做代码签名。
+          验证：Windows 工作流执行 Rust 测试、Tauri release 编译、安装器编译、锁定依赖及包完整性校验，使用包内 Python 验证后端、离线 WAV 和参考录音存储，并执行原生桌面离线冒烟检查。更新辅助程序使用已发布 0.6.0 的安装版与便携包测试两种升级、完整载荷与用户文件保留，以及无效包在开始替换前的拒绝。真实云端调用、完整 GPU 推理及交互式安装体验仍需单独验证。云端调用可能收费；离线测试音不是人声。应用未做代码签名。
           NOTES
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists; refusing to replace published assets." >&2
             exit 1
           else
-            gh release create "$RELEASE_TAG" dist/*.zip dist/*-setup.exe dist/*.sha256 --verify-tag --title "TTS Lab $RELEASE_TAG" --notes-file release-notes.md
+            # Keep the updater's latest-release endpoint on the previous complete
+            # release until all new assets have finished uploading.
+            gh release create "$RELEASE_TAG" dist/*.zip dist/*-setup.exe dist/*.sha256 --draft --verify-tag --title "TTS Lab $RELEASE_TAG" --notes-file release-notes.md
+            gh release view "$RELEASE_TAG" --json assets > draft-release-assets.json
+            python - <<'PY'
+          import json, os
+          from pathlib import Path
+          version = os.environ['RELEASE_TAG'].removeprefix('v')
+          prefix = f'TTS-Lab-{version}-win-x64'
+          expected = {prefix + '.zip', prefix + '.zip.sha256', prefix + '-setup.exe', prefix + '-setup.exe.sha256'}
+          assets = json.loads(Path('draft-release-assets.json').read_text(encoding='utf-8'))['assets']
+          assert len(assets) == 4 and {asset['name'] for asset in assets} == expected, 'Draft must contain exactly the four release assets'
+          assert all(asset.get('size', 0) > 0 for asset in assets), 'Draft release assets must finish uploading before publication'
+          PY
+            gh release edit "$RELEASE_TAG" --draft=false --latest
           fi
