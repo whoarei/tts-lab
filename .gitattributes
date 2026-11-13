@@ -1,0 +1,2 @@
+# Preserve upstream license text, including its original line-end whitespace.
+THIRD-PARTY-NOTICES.txt -whitespace

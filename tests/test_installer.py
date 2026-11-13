@@ -72,7 +72,7 @@ class InstallerTests(unittest.TestCase):
                 self.assertIn(f'!define UNINSTALL_PAYLOAD "{folder / "cleanup.nsh"}"\n', script)
 
     def test_webview2_is_ready_before_old_application_is_removed(self):
-        source = (Path(__file__).resolve().parents[1] / 'scripts/windows-installer.nsi').read_text()
+        source = (Path(__file__).resolve().parents[1] / 'scripts/windows-installer.nsi').read_text(encoding='utf-8')
         section = source[source.index('Section "TTS Lab（必选）"'):]
         self.assertLess(section.index('Call EnsureWebView2'), section.index('Uninstall.exe'))
         detect = source[source.index('Function DetectWebView2'):source.index('Function EnsureWebView2')]

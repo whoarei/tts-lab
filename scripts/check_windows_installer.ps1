@@ -10,6 +10,8 @@ $sentinelName = 'installer-ci-' + [Guid]::NewGuid().ToString('N') + '.txt'
 $profileSentinel = Join-Path $profilePath $sentinelName
 $unrelatedFile = Join-Path $installPath 'preserve-unrelated-file.txt'
 $sentinelValue = [Guid]::NewGuid().ToString('N')
+$legacyInstaller = Join-Path $env:RUNNER_TEMP 'TTS-Lab-0.5.0-legacy-setup.exe'
+$legacySha256 = 'e2e95bbbbddd9c9058284622a915d2a1623bebf661194050b8fcf44ad0c2ea9a'
 
 function Run-InstallerProcess([string]$Executable, [string[]]$Arguments) {
     $process = Start-Process -FilePath $Executable -ArgumentList $Arguments -PassThru
@@ -55,7 +57,40 @@ try {
         throw 'Uninstall removed a file outside its known payload'
     }
     Check-ProfileSentinel
-    Write-Output 'Current-user setup, reinstall, uninstall and user-file preservation passed.'
+    # Exercise the actual published Electron -> Tauri transition, not just a
+    # reinstall of a Tauri-generated uninstall manifest. The immutable release
+    # asset's hash is pinned before anything is executed.
+    if (-not (Test-Path -LiteralPath $legacyInstaller)) {
+        Invoke-WebRequest -Uri 'https://github.com/whoarei/tts-lab/releases/download/v0.5.0/TTS-Lab-0.5.0-win-x64-setup.exe' -OutFile $legacyInstaller
+    }
+    if ((Get-FileHash -LiteralPath $legacyInstaller -Algorithm SHA256).Hash.ToLowerInvariant() -ne $legacySha256) {
+        throw 'Published legacy Electron installer SHA256 mismatch'
+    }
+    Run-InstallerProcess $legacyInstaller @('/S', ('/D=' + $installPath))
+    $electronFiles = @('resources.pak', 'icudtl.dat', 'resources/app/main.js', 'resources/app/preload.js')
+    foreach ($name in $electronFiles) {
+        if (-not (Test-Path -LiteralPath (Join-Path $installPath $name))) {
+            throw "Legacy installation is missing its expected Electron member: $name"
+        }
+    }
+    Check-ProfileSentinel
+    Run-InstallerProcess $Installer @('/S', ('/D=' + $installPath))
+    if ((Get-FileHash -LiteralPath $installedExe).Hash -ne (Get-FileHash -LiteralPath (Join-Path $Bundle 'TTS Lab.exe')).Hash) {
+        throw 'Electron upgrade did not install the expected Tauri executable'
+    }
+    foreach ($name in $electronFiles) {
+        if (Test-Path -LiteralPath (Join-Path $installPath $name)) {
+            throw "Electron upgrade left an obsolete runtime member: $name"
+        }
+    }
+    if ((Get-Content -LiteralPath $unrelatedFile -Raw).Trim() -ne $sentinelValue) {
+        throw 'Electron upgrade removed a file outside the known payload'
+    }
+    Check-ProfileSentinel
+    Run-InstallerProcess $uninstaller @('/S', ('_?=' + $installPath))
+    if (Test-Path -LiteralPath $installedExe) { throw 'Post-upgrade uninstall left the application executable' }
+    Check-ProfileSentinel
+    Write-Output 'Fresh Tauri setup, reinstall, published Electron upgrade, uninstall and user-file preservation passed.'
 } finally {
     # These are this check's unique files; leave all other profile files untouched.
     Remove-Item -LiteralPath $profileSentinel -Force -ErrorAction SilentlyContinue
