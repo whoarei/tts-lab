@@ -1,14 +1,15 @@
 # Native update-helper regression. Only this test's unique profile files are touched.
 param([Parameter(Mandatory=$true)][string]$Bundle,
       [Parameter(Mandatory=$true)][string]$Installer,
-      [Parameter(Mandatory=$true)][string]$PortableZIP)
+      [Parameter(Mandatory=$true)][string]$PortableZIP,
+      [ValidateSet('0.6.0', '0.7.0')][string]$BaselineVersion = '0.6.0')
 $ErrorActionPreference = 'Stop'
 $Bundle = (Resolve-Path -LiteralPath $Bundle).Path
 $Installer = (Resolve-Path -LiteralPath $Installer).Path
 $PortableZIP = (Resolve-Path -LiteralPath $PortableZIP).Path
 $version = (Get-Content -LiteralPath (Join-Path $Bundle 'resources/app/package.json') -Raw | ConvertFrom-Json).version
-if ([version]$version -le [version]'0.6.0') {
-    throw 'Native update regression requires a candidate newer than the published 0.6.0 baseline'
+if ([version]$version -le [version]$BaselineVersion) {
+    throw "Native update regression requires a candidate newer than the published $BaselineVersion baseline"
 }
 $identity = [Guid]::NewGuid().ToString('N')
 $temporary = Join-Path $env:RUNNER_TEMP ('TTS Lab update 测试 ' + $identity)
@@ -21,10 +22,20 @@ $portableTarget = Join-Path $temporary 'Portable 便携 app with spaces'
 $installedTarget = Join-Path $temporary 'Installed 安装 app with spaces'
 $helper = Join-Path $requests 'update-helper.exe'
 $installedActive = $false
-$legacyInstaller = Join-Path $temporary 'TTS-Lab-0.6.0-win-x64-setup.exe'
-$legacyZIP = Join-Path $temporary 'TTS-Lab-0.6.0-win-x64.zip'
-$legacyInstallerSHA = 'ad2208e31d9f71d1e232b02f5dca2e0c565192e83a31150161f236301160f06e'
-$legacyZIPSHA = 'c6da9cebaf1e51e9b0da680af6fb6c2cee51a1ada8a280db0344ae2da907bb1b'
+$legacyInstaller = Join-Path $temporary "TTS-Lab-$BaselineVersion-win-x64-setup.exe"
+$legacyZIP = Join-Path $temporary "TTS-Lab-$BaselineVersion-win-x64.zip"
+$baselineHashes = @{
+    '0.6.0' = @{
+        Installer = 'ad2208e31d9f71d1e232b02f5dca2e0c565192e83a31150161f236301160f06e'
+        Portable = 'c6da9cebaf1e51e9b0da680af6fb6c2cee51a1ada8a280db0344ae2da907bb1b'
+    }
+    '0.7.0' = @{
+        Installer = '36455841c3b58135f64bbde09a3e401e57d7816ea900c7d9a343e68184818d0c'
+        Portable = 'bfb3ccb1199f9bb70e9b2cc1dfc8faf3e31f25a38c4964ec82bd8ce799a47a01'
+    }
+}
+$legacyInstallerSHA = $baselineHashes[$BaselineVersion].Installer
+$legacyZIPSHA = $baselineHashes[$BaselineVersion].Portable
 $utf8 = [Text.UTF8Encoding]::new($false)
 
 function Assert-FileHash([string]$Path, [string]$Expected, [string]$Label) {
@@ -72,7 +83,7 @@ function Assert-NewPayload([string]$Target) {
     Assert-Sentinels $Target
 }
 function Assert-OldPortableUnchanged {
-    Assert-Version $portableTarget '0.6.0'
+    Assert-Version $portableTarget $BaselineVersion
     Assert-FileHash (Join-Path $portableTarget 'BUILD-MANIFEST.json') $legacyPortableManifestHash 'Unchanged old portable manifest'
     foreach ($item in $legacyPortableManifest.files) {
         Assert-FileHash (Join-Path $portableTarget $item.path) $item.sha256 'Unchanged old portable payload member'
@@ -129,15 +140,24 @@ try {
     New-Item -ItemType Directory -Path $temporary -Force | Out-Null
     New-Item -ItemType Directory -Path $requests -Force | Out-Null
     [IO.File]::WriteAllText($profileSentinel, $sentinel, $utf8)
-    Copy-Item -LiteralPath (Join-Path $Bundle 'TTS Lab.exe') -Destination $helper
-    Invoke-WebRequest -Uri 'https://github.com/whoarei/tts-lab/releases/download/v0.6.0/TTS-Lab-0.6.0-win-x64-setup.exe' -OutFile $legacyInstaller
-    Invoke-WebRequest -Uri 'https://github.com/whoarei/tts-lab/releases/download/v0.6.0/TTS-Lab-0.6.0-win-x64.zip' -OutFile $legacyZIP
-    Assert-FileHash $legacyInstaller $legacyInstallerSHA 'Published 0.6.0 installer'
-    Assert-FileHash $legacyZIP $legacyZIPSHA 'Published 0.6.0 portable ZIP'
+    $releaseBase = "https://github.com/whoarei/tts-lab/releases/download/v$BaselineVersion/TTS-Lab-$BaselineVersion-win-x64"
+    Invoke-WebRequest -Uri "$releaseBase-setup.exe" -OutFile $legacyInstaller
+    Invoke-WebRequest -Uri "$releaseBase.zip" -OutFile $legacyZIP
+    Assert-FileHash $legacyInstaller $legacyInstallerSHA "Published $BaselineVersion installer"
+    Assert-FileHash $legacyZIP $legacyZIPSHA "Published $BaselineVersion portable ZIP"
     $unpacked = Join-Path $temporary 'legacy portable archive'
     Expand-Archive -LiteralPath $legacyZIP -DestinationPath $unpacked
-    Move-Item -LiteralPath (Join-Path $unpacked 'TTS-Lab-0.6.0-win-x64') -Destination $portableTarget
-    Assert-Version $portableTarget '0.6.0'
+    Move-Item -LiteralPath (Join-Path $unpacked "TTS-Lab-$BaselineVersion-win-x64") -Destination $portableTarget
+    Assert-Version $portableTarget $BaselineVersion
+    # 0.6.0 predates the updater; newer baselines must run their own published
+    # helper to verify an installed old version can consume the new manifest.
+    $helperSource = if ($BaselineVersion -eq '0.6.0') {
+        Join-Path $Bundle 'TTS Lab.exe'
+    } else {
+        Join-Path $portableTarget 'TTS Lab.exe'
+    }
+    Copy-Item -LiteralPath $helperSource -Destination $helper
+    Assert-FileHash $helper (Get-FileHash -LiteralPath $helperSource -Algorithm SHA256).Hash 'Copied native update helper'
     [IO.File]::WriteAllText((Join-Path $portableTarget 'preserve-unrelated-user-file.txt'), $sentinel, $utf8)
     $legacyPortableManifest = Get-Content -LiteralPath (Join-Path $portableTarget 'BUILD-MANIFEST.json') -Raw | ConvertFrom-Json
     $legacyPortableManifestHash = (Get-FileHash -LiteralPath (Join-Path $portableTarget 'BUILD-MANIFEST.json') -Algorithm SHA256).Hash
@@ -156,7 +176,7 @@ try {
     # /D= is deliberately last and unquoted: NSIS consumes the remaining command line.
     Run-Process $legacyInstaller @('/S', ('/D=' + $installedTarget))
     $installedActive = $true
-    Assert-Version $installedTarget '0.6.0'
+    Assert-Version $installedTarget $BaselineVersion
     [IO.File]::WriteAllText((Join-Path $installedTarget 'preserve-unrelated-user-file.txt'), $sentinel, $utf8)
     $setupHash = (Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash
     Invoke-UpdateHelper 'installer-upgrade' 'installer' $Installer $setupHash $installedTarget $true
@@ -165,7 +185,7 @@ try {
     $installedActive = $false
     if (Test-Path -LiteralPath (Join-Path $installedTarget 'TTS Lab.exe')) { throw 'Updated application remained after uninstall' }
     Assert-Sentinels $installedTarget
-    Write-Output 'Pinned 0.6.0 portable and installed upgrades, rejection before readiness, payload hashes and user-file preservation passed.'
+    Write-Output "Pinned $BaselineVersion portable and installed upgrades to $version, rejection before readiness, payload hashes and user-file preservation passed."
 } finally {
     if ($installedActive -and (Test-Path -LiteralPath (Join-Path $installedTarget 'Uninstall.exe'))) {
         try { Run-Process (Join-Path $installedTarget 'Uninstall.exe') @('/S', ('_?=' + $installedTarget)) } catch { Write-Warning $_ }

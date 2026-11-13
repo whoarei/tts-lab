@@ -64,6 +64,22 @@ class ConfigurationTests(unittest.TestCase):
             self.assertEqual(os.environ['STEP_API_KEY'], 'explicit-step')
             self.assertEqual(os.environ['FISH_AUDIO_API_KEY'], 'explicit-fish')
 
+    def test_deepseek_key_requires_explicit_desktop_config_and_is_cleared_on_removal(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
+            'DEEPSEEK_API_KEY': 'inherited-deepseek',
+            'TTS_LAB_DESKTOP_TOKEN': 't' * 40, 'TTS_LAB_DATA_DIR': folder,
+        }):
+            config = Path(folder) / 'credentials.env'
+            config.write_text('', encoding='utf-8')
+            launcher.configure(True, config)
+            self.assertNotIn('DEEPSEEK_API_KEY', os.environ)
+            config.write_text('DEEPSEEK_API_KEY=explicit-deepseek\n', encoding='utf-8-sig')
+            launcher.configure(True, config)
+            self.assertEqual(os.environ['DEEPSEEK_API_KEY'], 'explicit-deepseek')
+            config.write_text('', encoding='utf-8')
+            launcher.configure(True, config)
+            self.assertNotIn('DEEPSEEK_API_KEY', os.environ)
+
     def test_bundled_polly_requires_explicit_config_for_desktop(self):
         from tts_lab.catalog import public_catalog
         with patch.dict(os.environ, {"TTS_LAB_DESKTOP": "1", "AWS_PROFILE": "",

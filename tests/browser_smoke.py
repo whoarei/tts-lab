@@ -31,7 +31,8 @@ with sync_playwright() as p:
     page.click('[data-page=compare]')
     first = page.locator('.variant').first
     for provider_id, credential in [('mimo', 'MIMO_API_KEY'), ('doubao', 'VOLCENGINE_TTS_API_KEY'),
-                                     ('stepfun', 'STEP_API_KEY'), ('fish', 'FISH_AUDIO_API_KEY')]:
+                                     ('stepfun', 'STEP_API_KEY'), ('fish', 'FISH_AUDIO_API_KEY'),
+                                     ('deepseek', 'DEEPSEEK_API_KEY')]:
         first.locator('.provider').select_option(provider_id)
         assert credential in first.inner_text()
     first.locator('.provider').select_option('local_indextts')

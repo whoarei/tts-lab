@@ -2,7 +2,7 @@
 
 在电脑上输入文字，选择声音，试听并比较。支持本地离线模型和多家云端语音服务，音频与测试记录保存在本机。
 
-**0.7.0 新增桌面在线更新**，可检查、下载并安装新版本。桌面自 0.6.0 起使用 Tauri 2 和系统 WebView2，保留现有 Python 后端、语音服务、本地模型及个人数据目录。
+**0.8.0 新增 DeepSeek 官方 TTS 接入**，支持 Stella / Tide 两种音色和 Markdown 过滤。保留 0.7.0 加入的桌面在线更新，可检查、下载并安装新版本。桌面自 0.6.0 起使用 Tauri 2 和系统 WebView2，保留现有 Python 后端、语音服务、本地模型及个人数据目录。
 
 [已发布的 0.6.0](https://github.com/whoarei/tts-lab/releases/tag/v0.6.0) 便携 ZIP 为 **53.25 MiB**、安装版为 **42.46 MiB**，较 Electron 0.5.0 分别减少约 **74%** 和 **71%**。发布后已独立下载并核验 SHA256、ZIP CRC 和全部载荷哈希；此前迁移候选构建的独立证据保留在 `VERIFICATION.json`。缺少 WebView2 时的首次安装、交互式安装向导和实际扬声器输出仍需实机验证。
 
@@ -10,14 +10,14 @@
 
 支持 **Windows 10 / 11 x64**，Python 和应用依赖随包提供，无需另装 Python 或 Node.js。Tauri 版需要 **Microsoft Edge WebView2 Runtime**：安装版会检测并在缺少时联网安装；便携版须先确保电脑已安装该运行时。使用已有运行时无需重复下载，离线电脑请提前准备运行时。
 
-- **安装版**：运行 `TTS-Lab-0.7.0-win-x64-setup.exe`，按提示安装，再从开始菜单打开 TTS Lab。默认安装到当前用户目录，无需管理员权限。
-- **便携版**：完整解压 `TTS-Lab-0.7.0-win-x64.zip`，双击文件夹里的 `TTS Lab.exe`。请保留旁边的全部文件。
+- **安装版**：运行 `TTS-Lab-0.8.0-win-x64-setup.exe`，按提示安装，再从开始菜单打开 TTS Lab。默认安装到当前用户目录，无需管理员权限。
+- **便携版**：完整解压 `TTS-Lab-0.8.0-win-x64.zip`，双击文件夹里的 `TTS Lab.exe`。请保留旁边的全部文件。
 
 升级前先退出应用。安装版可直接安装新版；便携版解压到新文件夹后打开。个人配置、模型和历史会保留，卸载安装版也不会删除这些数据。
 
 ## 在线更新
 
-**已发布的 0.6.0 没有在线更新功能，需要先手动安装 0.7.0 一次。** 从包含此功能的桌面版起，可在应用内获取后续版本。
+**0.7.0 可在应用内检查并升级到本版本。已发布的 0.6.0 没有在线更新功能，需要手动安装 0.8.0。** 从包含更新功能的桌面版起，可在应用内获取后续版本。
 
 在桌面版“模型配置”中的“应用更新”查看版本，也可点击左下角的“应用更新”入口。默认在启动时检查新版本，每天最多一次；可取消“启动时检查更新”，之后仍可手动点击“检查更新”。检查只读取发布信息，不会自动下载或安装。
 
@@ -56,13 +56,15 @@ IndexTTS 连同辅助模型约需 8 GB；GLM 权重约 9 GB，另需独立 Pytho
 3. 在“方案对比”选择服务，填写账号支持的模型、音色等参数，保存方案。
 4. 在“文本测试”选择方案，输入文字，确认云端调用后生成。
 
-支持 OpenAI、Gemini、Qwen / DashScope、MiniMax、小米 MiMo、字节豆包 / Seed TTS、ElevenLabs、StepAudio、Fish Audio、Azure、Google Cloud TTS 和 AWS Polly。只需配置想使用的服务；凭证文件里附有变量示例。服务显示“已检测到配置”后，仍需首次调用确认 Key、余额和模型权限。
+支持 OpenAI、DeepSeek、Gemini、Qwen / DashScope、MiniMax、小米 MiMo、字节豆包 / Seed TTS、ElevenLabs、StepAudio、Fish Audio、Azure、Google Cloud TTS 和 AWS Polly。只需配置想使用的服务；凭证文件里附有变量示例。服务显示“已检测到配置”后，仍需首次调用确认 Key、余额和模型权限。
+
+DeepSeek 使用独立的官方语音接口：填写 `DEEPSEEK_API_KEY`，重启后选择 Stella（默认女声）或 Tide（男声），可开关 Markdown 过滤。无需填写聊天模型名，不提供语速或风格指令。应用固定接收 24 kHz、单声道、16-bit PCM 并保存为 WAV，不上传参考录音。官方说明支持普通话、粤语、英语、日语、韩语、马来语、阿拉伯语、印尼语、泰语和越南语，自动识别语言；本应用仍限制每次最多 2000 字。
 
 云服务会收到你的文字和参数，**可能收费**。不要提交不适合外传的文本，也不要分享凭证文件。生成失败或超时后，先检查服务状态，再决定是否重试。
 
 ### 新增语音服务与模型覆盖
 
-0.5.0 新增以下语音服务与本地模型；2026-11-13 核对官方文档。
+下表汇总新增语音服务与本地模型；2026-11-13 核对官方文档。DeepSeek 于 0.8.0 新增，尚未使用真实账号调用验证。
 
 | 服务 / 模型 | 方式与配置 | 官方依据 |
 | --- | --- | --- |
@@ -72,9 +74,11 @@ IndexTTS 连同辅助模型约需 8 GB；GLM 权重约 9 GB，另需独立 Pytho
 | Fish Audio / Fish Speech 托管 API | `FISH_AUDIO_API_KEY` 和已有声音模型 ID；本次接入官方云 API，未接入本地 Fish Speech 权重 | [官方接口](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech) |
 | GLM-TTS | 本地 NVIDIA GPU；参考录音和逐字稿 | [官方仓库](https://github.com/zai-org/GLM-TTS) |
 | IndexTTS-2 | 本地 CPU / GPU；参考录音；不混用 2.5 权重 | [官方仓库](https://github.com/index-tts/index-tts) |
-| DeepSeek | 本次未在公开开发文档找到可直接接入的官方 TTS API，暂不列为可选语音引擎；应用内朗读和第三方插件另行核对 | [官方开发文档](https://api-docs.deepseek.com/zh-cn/) |
+| DeepSeek | `DEEPSEEK_API_KEY`；独立 TTS API；Stella / Tide，Markdown 过滤；本应用固定 PCM 转 WAV，无需模型名，不支持调速、风格指令或参考音频 | [官方 TTS 文档](https://api-docs.deepseek.com/guides/tts/) |
 
-已有凭证文件不会被升级覆盖，需要时手动追加对应变量并重启。参考录音保存在 `models/references/`；参数记录录音 ID 与 SHA256，导出 ZIP 不包含原始参考音频。更详细的接口限制与验证边界见 `api_contracts.md` 和 `VERIFICATION.json`。
+已有凭证文件不会被升级覆盖；使用 DeepSeek 时，请手动追加 `DEEPSEEK_API_KEY` 并重启。官方接口上限为 10,000 计费字符与 64 KiB 请求体（中文字符按 2、其他字符按 1 计费），本应用沿用更小的 2000 字限制。HTTP 错误或超时不会自动重试，避免意外重复调用。
+
+本地模型的参考录音保存在 `models/references/`；参数记录录音 ID 与 SHA256，导出 ZIP 不包含原始参考音频。更详细的接口限制与验证边界见 `api_contracts.md` 和 `VERIFICATION.json`。
 
 ## 比较多个方案
 

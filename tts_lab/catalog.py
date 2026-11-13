@@ -58,6 +58,11 @@ CATALOG = [
              num('speech_rate', '语速变化 (%)', 0, -50, 100, 1),
              num('loudness_rate', '音量变化 (%)', 0, -50, 100, 1),
              select('sample_rate', '采样率', '24000', ['8000', '16000', '22050', '24000', '32000', '44100', '48000'])]),
+    dict(id='deepseek', name='DeepSeek TTS', family='generative',
+         description='官方 TTS API；Stella 女声 / Tide 男声，自动识别中、粤、英等 10 种语言。完整接收后转为 24 kHz 单声道 WAV；不支持调速或风格指令。',
+         env=['DEEPSEEK_API_KEY'], docs='https://api-docs.deepseek.com/guides/tts/', fields=[
+             select('voice', '音色', 'stella', ['stella', 'tide']),
+             field('filter_markdown', '朗读前过滤 Markdown 格式', True, 'checkbox')]),
     dict(id='elevenlabs', name='ElevenLabs', family='generative',
          description='voice_settings 随模型而异；默认参数适用于 multilingual_v2。切换模型前请查文档，必要时关闭自定义设置。需要账户可访问的 voice ID。', env=['ELEVENLABS_API_KEY'],
          docs='https://elevenlabs.io/docs/api-reference/text-to-speech/convert', fields=[
