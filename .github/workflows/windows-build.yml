@@ -2,6 +2,7 @@ name: Build Windows installer and portable release
 on:
   workflow_dispatch:
   push:
+    branches: ['tauri-migration']
     tags: ['v*']
 permissions:
   contents: read
@@ -11,24 +12,69 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@1.100.0
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
       - name: Validate release version
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
         run: |
-          python -c "import json,os; v=json.load(open('package.json'))['version']; assert os.environ['REF_TYPE'] != 'tag' or os.environ['REF_NAME'] == 'v'+v, 'Tag must match package.json version'"
+          $code = @'
+          import ast, json, os, re, tomllib
+          from pathlib import Path
+          package = json.loads(Path('package.json').read_text(encoding='utf-8'))
+          version = package['version']
+          assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version), 'Installer requires a three-part numeric version'
+          npm_lock = json.loads(Path('package-lock.json').read_text(encoding='utf-8'))
+          cargo = tomllib.loads(Path('src-tauri/Cargo.toml').read_text(encoding='utf-8'))
+          cargo_lock = tomllib.loads(Path('src-tauri/Cargo.lock').read_text(encoding='utf-8'))
+          native_packages = [p for p in cargo_lock['package'] if p['name'] == cargo['package']['name'] and 'source' not in p]
+          assert len(native_packages) == 1, 'Cargo.lock must contain exactly one local desktop package'
+          tauri = json.loads(Path('src-tauri/tauri.conf.json').read_text(encoding='utf-8'))
+          module = ast.parse(Path('tts_lab/app.py').read_text(encoding='utf-8'))
+          state = next(node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == 'state')
+          result = next(node.value for node in ast.walk(state) if isinstance(node, ast.Return))
+          api_version = next(ast.literal_eval(value) for key, value in zip(result.keys, result.values) if isinstance(key, ast.Constant) and key.value == 'version')
+          versions = {'package-lock.json': npm_lock['version'], 'package-lock.json root': npm_lock['packages']['']['version'], 'Cargo.toml': cargo['package']['version'], 'Cargo.lock': native_packages[0]['version'], 'tauri.conf.json': tauri['version'], 'Python /api/state': api_version}
+          mismatches = {name: value for name, value in versions.items() if value != version}
+          assert not mismatches, f'Application versions must match package.json {version}: {mismatches}'
+          assert os.environ['REF_TYPE'] != 'tag' or os.environ['REF_NAME'] == 'v' + version, 'Tag must match package.json version'
+          print(f'All application versions match {version}')
+          '@
+          python -c $code
       - name: Install NSIS compiler
         run: choco install nsis --version=3.11 --no-progress -y
       - name: Check installer compiler paths
         run: python -m unittest discover -s tests -p test_installer.py -v
+      - name: Prepare bundled frontend
+        run: |
+          npm ci
+          python scripts/prepare_frontend.py
+          python -m pip install -r requirements.txt
+      - name: Test and compile Tauri desktop
+        working-directory: src-tauri
+        run: |
+          $env:TTS_LAB_PYTHON = (Get-Command python).Source
+          cargo test --locked --features custom-protocol --target x86_64-pc-windows-msvc
+          cargo build --release --locked --features custom-protocol --target x86_64-pc-windows-msvc
+      - name: Generate Rust third-party license notices
+        run: python scripts/third_party_notices.py
       - name: Build hash-locked installer and portable ZIP
-        run: python scripts/build_windows.py --installer
+        run: python scripts/build_windows.py --desktop-exe src-tauri/target/x86_64-pc-windows-msvc/release/tts-lab.exe --installer
       - name: Check bundled Python backend and offline audio
         shell: pwsh
         env:
@@ -57,6 +103,27 @@ jobs:
           '@
           & "$bundle/resources/python/python.exe" -c $code $version $bundle
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check native installer lifecycle and preserved user files
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          ./scripts/check_windows_installer.ps1 -Bundle "dist/TTS-Lab-$version-win-x64" -Installer "dist/TTS-Lab-$version-win-x64-setup.exe"
+      - name: Check native Tauri desktop and exports
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $bundle = Join-Path (Get-Location) "dist/TTS-Lab-$version-win-x64"
+          $report = Join-Path $env:RUNNER_TEMP "tts-lab-desktop-smoke.json"
+          $arguments = @('--smoke-test', '--smoke-output', ('"' + $report + '"'))
+          $process = Start-Process -FilePath "$bundle/TTS Lab.exe" -ArgumentList $arguments -PassThru
+          if (-not $process.WaitForExit(180000)) {
+            $process.Kill()
+            throw "Native desktop smoke test timed out"
+          }
+          if ($process.ExitCode -ne 0) { throw "Native desktop smoke failed ($($process.ExitCode))" }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          if ($result.status -ne 'passed') { throw "Desktop smoke report did not pass" }
+          Get-Content $report
       - uses: actions/upload-artifact@v4
         with:
           name: TTS-Lab-Windows-x64
@@ -87,23 +154,21 @@ jobs:
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
           本次更新：
-          - 新增小米 MiMo-V2.5-TTS / VoiceDesign、字节豆包 Seed-TTS 2.0 / 已有 ICL 2.0 音色、StepAudio 3 / 2.5 和 Fish Audio 官方云 API。
-          - 新增 IndexTTS-2 本地 CPU / NVIDIA GPU 与 GLM-TTS 本地 NVIDIA GPU 接入，支持按需下载、文件校验和安装试生成。
-          - 支持本机参考 WAV 导入、试听及保存到方案；GLM 需要准确逐字稿。参考录音不发送云端，导出配置保留录音 SHA256。
-          - 保留文本测试、方案对比、模型配置三页、方案保存和 Windows 安装器功能。
-          - 补全 Windows 发行包的参考录音模块，并增加独立导入检查，避免源码可用但打包遗漏模块。
+          - 桌面壳迁移至 Tauri 2，复用系统 WebView2，保留 Python 语音后端。
+          - 保留方案、凭证、历史音频、本地模型和参考录音的数据目录。
+          - 保留文本测试、方案对比、模型配置及所有已有 TTS 服务接入。
 
           下载与安装：
-          - setup.exe：Windows 10/11 x64 当前用户安装，无需管理员权限。
-          - win-x64.zip：完整解压后运行 TTS Lab.exe，保留旁边所有文件。
+          - setup.exe：Windows 10/11 x64 当前用户安装；已有 WebView2 时直接复用，缺少时需联网安装 Microsoft WebView2。
+          - win-x64.zip：完整解压后运行 TTS Lab.exe，需已安装 Microsoft WebView2 Evergreen Runtime；保留旁边所有文件。
           - 两种版本均包含 Python 和应用依赖；本地人声模型与推理环境按需另行下载，升级保留个人配置和历史。
           - exe.sha256 / zip.sha256：对应下载文件的 SHA256 校验值。
-          - 新增云服务需在本机凭证文件填写对应 Key；Fish 还需声音模型 ID，接入的是托管 API，未包含本地 Fish Speech 权重。
 
-          验证：发布前执行 Python / Node 检查及浏览器流程测试；IndexTTS 已在 Linux CPU 通过完整安装和应用 API 生成验证。Windows 工作流执行安装器回归、锁定依赖和包完整性校验，并使用包内 Python 验证后端导入、离线 WAV 和参考录音存储。GLM 完整 GPU 推理、Windows 桌面 GUI/声音播放/安装升级卸载体验，以及真实云端调用尚未实机验证。云端调用可能收费；离线测试音不是人声。应用未做代码签名。
+          验证：Windows 工作流执行 Rust 测试、Tauri release 编译、安装器编译、锁定依赖及包完整性校验，使用包内 Python 验证后端、离线 WAV 和参考录音存储，并执行原生桌面离线冒烟检查。真实云端调用、完整 GPU 推理和用户交互式安装/升级/卸载体验仍需单独验证。云端调用可能收费；离线测试音不是人声。应用未做代码签名。
           NOTES
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" dist/*.zip dist/*-setup.exe dist/*.sha256 --clobber
+            echo "Release $RELEASE_TAG already exists; refusing to replace published assets." >&2
+            exit 1
           else
             gh release create "$RELEASE_TAG" dist/*.zip dist/*-setup.exe dist/*.sha256 --verify-tag --title "TTS Lab $RELEASE_TAG" --notes-file release-notes.md
           fi

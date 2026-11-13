@@ -3,14 +3,15 @@
   "version": "0.5.0",
   "private": true,
   "description": "Local TTS comparison desktop application",
-  "main": "desktop/main.js",
   "scripts": {
     "test": "node --test desktop/*.test.js",
-    "start": "electron .",
+    "start": "tauri dev",
+    "tauri": "tauri",
+    "build:desktop": "tauri build --no-bundle",
     "build:win": "python scripts/build_windows.py --installer"
   },
   "devDependencies": {
-    "electron": "45.2.3"
+    "@tauri-apps/cli": "2.12.4"
   },
   "engines": {
     "node": ">=22"

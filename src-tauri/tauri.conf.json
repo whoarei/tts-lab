@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "TTS Lab",
+  "version": "0.5.0",
+  "identifier": "io.github.whoarei.ttslab",
+  "build": {
+    "beforeDevCommand": "python scripts/prepare_frontend.py",
+    "beforeBuildCommand": "python scripts/prepare_frontend.py",
+    "frontendDist": "../.build-cache/frontend"
+  },
+  "app": {
+    "windows": [],
+    "withGlobalTauri": true,
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob: http://tts-api.localhost tts-api:; connect-src 'self' ipc: http://ipc.localhost http://tts-api.localhost tts-api:; frame-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
+      "capabilities": ["main"]
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/icon.ico"]
+  }
+}

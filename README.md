@@ -2,9 +2,11 @@
 
 在电脑上输入文字，选择声音，试听并比较。支持本地离线模型和多家云端语音服务，音频与测试记录保存在本机。
 
+当前源码正在迁移到 **Tauri 2**，复用系统浏览器运行时以减小下载体积；这次迁移尚未发布新版本。已经发布的 v0.5.0 使用 Electron，下面的 WebView2 要求仅适用于 Tauri 源码构建。
+
 ## 安装与启动
 
-支持 **Windows 10 / 11 x64**，无需另装 Python、Node.js 或 WebView2。
+支持 **Windows 10 / 11 x64**，Python 和应用依赖随包提供，无需另装 Python 或 Node.js。Tauri 版需要 **Microsoft Edge WebView2 Runtime**：安装版会检测并在缺少时联网安装；便携版须先确保电脑已安装该运行时。使用已有运行时无需重复下载，离线电脑请提前准备运行时。
 
 - **安装版**：运行 `TTS-Lab-0.5.0-win-x64-setup.exe`，按提示安装，再从开始菜单打开 TTS Lab。默认安装到当前用户目录，无需管理员权限。
 - **便携版**：完整解压 `TTS-Lab-0.5.0-win-x64.zip`，双击文件夹里的 `TTS Lab.exe`。请保留旁边的全部文件。
@@ -91,6 +93,7 @@ IndexTTS 连同辅助模型约需 8 GB；GLM 权重约 9 GB，另需独立 Pytho
 - **服务或模型不可用？** 查看“模型配置”的状态。本地模型须完成安装；云服务须填写凭证并重启，模型和音色也须在账号权限范围内。
 - **没有生成完成就退出了？** 关闭应用会停止本机等待，云端已收到的请求仍可能完成并计费；重新打开后先查看历史。
 - **Windows 提示安全限制？** 应用目前未做代码签名，请遵循系统或组织的安全要求。Windows 原生安装与运行情况见验证说明。
+- **Tauri 便携版打不开？** 先确认已安装 Microsoft Edge WebView2 Runtime，并完整解压全部文件。Tauri 版复用系统浏览器运行时，未在便携包中附带完整浏览器。
 
 ## 从源码运行
 
@@ -105,5 +108,14 @@ python run.py
 ```
 
 打开 [http://127.0.0.1:8765](http://127.0.0.1:8765)，停止时在终端按 `Ctrl+C`。源码模式配置云服务时，把 `.env.example` 复制为 `.env`，填写后重启；数据与模型默认保存在项目内的 `data/` 和 `models/`。
+
+运行 Tauri 桌面窗口还需要 Node.js 22+、Rust 工具链和系统 WebView 开发依赖；Windows 需要 MSVC C++ 构建工具和 WebView2。完成上述 Python 环境安装后执行：
+
+```bash
+npm ci
+npm start
+```
+
+桌面模式使用用户目录中的 `credentials.env`，并保留现有方案、模型与历史所在位置。桌面壳通过原生层访问本机 Python 服务，鉴权令牌不交给页面；界面、模型推理和云服务适配继续使用现有实现。Tauri 迁移不改变本地模型按需下载方式，也不会直接提高模型合成速度。
 
 构建安装包见 [WINDOWS-BUILD.md](WINDOWS-BUILD.md)，服务协议与限制见 [api_contracts.md](api_contracts.md)，已做和待做的检查见 [VERIFICATION.json](VERIFICATION.json)。云端账号权限、费用、音质和 Windows 原生运行需在自己的环境中验证。

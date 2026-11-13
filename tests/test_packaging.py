@@ -1,12 +1,13 @@
 """Import the copied backend in a fresh interpreter to catch omitted modules."""
 import os
+import struct
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
 
-from scripts.build_windows import ROOT, copy_backend
+from scripts.build_windows import ROOT, BACKEND_FILES, copy_backend, find_desktop_exe, verify_pe
 
 
 class PackagingTests(unittest.TestCase):
@@ -24,3 +25,38 @@ class PackagingTests(unittest.TestCase):
             result = subprocess.run([sys.executable, '-I', '-c', code], cwd=folder,
                                     env=env, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_explicit_desktop_binary_must_exist_and_be_windows_x64(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / 'tts-lab.exe'
+            with self.assertRaises(ValueError):
+                find_desktop_exe(executable)
+            # This is an invalid non-Windows executable, not a usable Tauri bundle.
+            executable.write_bytes(b'not a Windows application')
+            self.assertEqual(find_desktop_exe(executable), executable.resolve())
+            with self.assertRaises(ValueError):
+                verify_pe(executable)
+            binary = bytearray(256)
+            binary[:2] = b'MZ'
+            struct.pack_into('<I', binary, 0x3c, 128)
+            binary[128:134] = b'PE\0\0\x4c\x01'
+            executable.write_bytes(binary)
+            with self.assertRaises(ValueError):
+                verify_pe(executable)
+            binary[132:134] = b'\x64\x86'
+            executable.write_bytes(binary)
+            verify_pe(executable)
+
+    def test_backend_allowlist_includes_desktop_bridge_and_excludes_private_files(self):
+        self.assertIn('static/desktop.js', BACKEND_FILES)
+        with tempfile.TemporaryDirectory() as temporary:
+            source, target = Path(temporary) / 'source', Path(temporary) / 'target'
+            for name in BACKEND_FILES:
+                path = source / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('fixture')
+            (source / 'credentials.env').write_text('private')
+            (source / 'local.backup.py').write_text('private')
+            copy_backend(source, target)
+            self.assertEqual({p.relative_to(target).as_posix() for p in target.rglob('*') if p.is_file()},
+                             set(BACKEND_FILES))

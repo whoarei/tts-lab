@@ -12,9 +12,9 @@ import subprocess
 import tempfile
 
 try:
-    from .build_windows import ROOT, sha256, verify_bundle
+    from .build_windows import ROOT, download, sha256, verify_bundle
 except ImportError:
-    from build_windows import ROOT, sha256, verify_bundle
+    from build_windows import ROOT, download, sha256, verify_bundle
 
 
 def nsis_quote(value):
@@ -33,7 +33,7 @@ def nsis_source_path(value):
     return value
 
 
-def installer_script(bundle, compiled, cleanup, version, kilobytes):
+def installer_script(bundle, compiled, cleanup, version, kilobytes, bootstrapper=None):
     definitions = {
         'APP_VERSION': version,
         'WINDOWS_VERSION': version + '.0',
@@ -44,6 +44,8 @@ def installer_script(bundle, compiled, cleanup, version, kilobytes):
         'UNINSTALL_PAYLOAD': cleanup,
         'INSTALLED_KB': kilobytes,
     }
+    if bootstrapper is not None:
+        definitions['WEBVIEW2_BOOTSTRAPPER'] = bootstrapper
     return ('\n'.join(f'!define {key} "{nsis_source_path(value)}"'
                       for key, value in definitions.items()) + '\n' +
             f'!include "{nsis_source_path(ROOT / "scripts/windows-installer.nsi")}"\n')
@@ -99,7 +101,7 @@ def verify_installer(path):
         raise ValueError('Installer output is unexpectedly small')
 
 
-def build_installer(bundle, output, compiler=None):
+def build_installer(bundle, output, compiler=None, *, cache=None):
     bundle, output = Path(bundle).resolve(), Path(output).resolve()
     if not (bundle / 'BUILD-MANIFEST.json').is_file():
         raise ValueError('Installer requires a bundle with BUILD-MANIFEST.json; run build_windows.py first')
@@ -110,6 +112,10 @@ def build_installer(bundle, output, compiler=None):
     if not re.fullmatch(r'\d+\.\d+\.\d+', version):
         raise ValueError('Installer requires a three-part numeric package version')
     compiler = find_makensis(compiler)
+    cache = Path(cache or ROOT / '.build-cache').resolve()
+    cache.mkdir(parents=True, exist_ok=True)
+    bootstrapper = download(lock['webview2_bootstrapper'], cache)
+    verify_installer(bootstrapper)
     output.mkdir(parents=True, exist_ok=True)
     installer = output / f'TTS-Lab-{version}-win-x64-setup.exe'
     kilobytes = sum(p.stat().st_size for p in bundle.rglob('*') if p.is_file()) // 1024
@@ -119,7 +125,7 @@ def build_installer(bundle, output, compiler=None):
         cleanup = folder / 'uninstall-payload.nsh'
         cleanup.write_text(payload_commands(bundle), encoding='utf-8')
         script = folder / 'installer.nsi'
-        script.write_text(installer_script(bundle, compiled, cleanup, version, kilobytes),
+        script.write_text(installer_script(bundle, compiled, cleanup, version, kilobytes, bootstrapper),
                           encoding='utf-8')
         subprocess.run([compiler, '-WX', '-V2', '-INPUTCHARSET', 'UTF8', str(script)], check=True)
         verify_installer(compiled)
