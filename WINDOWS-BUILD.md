@@ -1,6 +1,6 @@
 # Windows x64 Tauri installer and portable build
 
-The desktop source is migrating to Tauri 2. The package version remains 0.5.0 during development; the published v0.5.0 assets use Electron. These instructions describe the Tauri source build and do not announce a new release or claim that native Windows checks have passed.
+The desktop source uses Tauri 2. The package version remains 0.5.0 during development; the published v0.5.0 assets use Electron. The [Windows candidate workflow](https://github.com/whoarei/tts-lab/actions/runs/43363388939) passed release compilation, bundled-backend checks, native WebView2 desktop smoke, and silent install/upgrade/uninstall checks for commit `5bc1bd448986a7d4bc7c397ab36576e1f81ea1c6`. These instructions do not announce a new release; remaining interactive/runtime-provisioning limits are recorded below and in `VERIFICATION.json`.
 
 Build on Windows with Python 3.10+ and pip, Node.js 22+, the Rust MSVC toolchain, Visual Studio C++ build tools, and WebView2. Building the installer also needs NSIS 3 (`makensis`; tested with 3.11). Dependency downloads need access to npm, crates.io, official Python/Microsoft distributions, and PyPI. The recipient does not need Python, Node.js, Rust, or development tools installed.
 
@@ -19,7 +19,9 @@ Outputs:
 - `dist/TTS-Lab-<version>-win-x64-setup.exe` and `.exe.sha256`: current-user installer. The default directory remains `%LOCALAPPDATA%\Programs\TTS Lab`; no administrator access is requested. It creates a Start menu entry, an optional desktop shortcut, and a Windows uninstall entry.
 - `dist/TTS-Lab-<version>-win-x64.zip` and `.zip.sha256`: portable folder. Extract the entire ZIP before opening `TTS Lab.exe`. The host must already have Microsoft Edge WebView2 Runtime installed.
 
-Target: Windows 10/11 x64. The app is not code signed. Python and the application dependencies remain bundled; local voice models and their separate inference environments are downloaded through the app when requested. Removing Electron does not remove Python or model requirements, and it does not directly accelerate synthesis. New package sizes require a real Tauri build; no size target in an assessment is a measured result.
+Target: Windows 10/11 x64. The app is not code signed. Python and the application dependencies remain bundled; local voice models and their separate inference environments are downloaded through the app when requested. Removing Electron does not remove Python or model requirements, and it does not directly accelerate synthesis.
+
+The Windows candidate above produced a 55,836,422-byte portable ZIP (53.25 MiB) and a 44,507,027-byte setup EXE (42.45 MiB), compared with 212,120,731 and 154,417,010 bytes for the published Electron v0.5.0 assets. Those measured reductions are approximately 74% and 71%. They apply to that exact candidate artifact; later changes to packaged documentation can change byte counts. Locked-input and payload SHA256 checks and portable ZIP CRC ran inside CI, and both SHA256 sidecars were uploaded. Independent candidate-artifact download verification was blocked locally by the environment proxy with HTTP 403; it has not been claimed as completed.
 
 ## WebView2 installation
 
@@ -75,6 +77,8 @@ python scripts/build_windows.py --verify dist/TTS-Lab-<version>-win-x64
 The build checks locked input SHA256 values, final ZIP CRC, x64 PE executable/native-extension headers, backend file completeness, all installed dependency versions and Windows dependency closure, excluded private paths, and manifest hashes. The installer builder verifies its bundle before compiling, checks the output PE header, and writes a SHA256 sidecar.
 
 A successful cross-build does not establish native installation, upgrade/uninstall, shortcuts, SmartScreen behavior, audio playback, GUI behavior, or paid provider API correctness. Windows checks should cover first launch with/without WebView2, installer runtime-download failure, paths containing spaces/Chinese text, an upgrade from Electron with saved schemes and history, refusal to replace a running app, and retained user data after uninstall. Do not relax hash checks when changing Python dependencies; deliberately regenerate both Windows CPython 3.13 lock files and verify the dependency closure.
+
+The successful Windows candidate used an existing WebView2 runtime. Its automated checks exercised fresh silent setup, reinstall, upgrade from the hash-verified published Electron v0.5.0 installer, obsolete Electron payload removal, uninstall, and sentinel-file preservation in both the user profile and install directory. Native desktop smoke exercised binary `File` reference upload/preview, window maximize/restore, offline single/comparison generation, audio metadata and muted playback, native WAV/ZIP/CSV exports, native-command boundaries, and the model page. First-time WebView2 installation/download failure, interactive wizard and Save As choices, actual speaker output, SmartScreen, and replacement while the app is running remain unverified. Real paid cloud calls and full GPU inference were not part of this migration validation.
 
 ## GitHub Actions
 

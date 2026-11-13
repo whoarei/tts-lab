@@ -1,7 +1,7 @@
 {
   "version": "0.5.0",
   "checked_on": "2026-11-13",
-  "development_status": "Tauri 2 migration in development; version remains 0.5.0; no Tauri release published",
+  "development_status": "Desktop source uses Tauri 2; Windows candidate build and automated native checks passed; version remains 0.5.0 and no Tauri release is published",
   "target": "Windows 10/11 x64 per-user installer and portable folder",
   "bundled_runtime": {
     "desktop": "Tauri 2.12.5 (system WebView2 on Windows)",
@@ -12,24 +12,27 @@
   "checks": {
     "python_unittest": "PASS: 91/91 application and packaging tests; no skipped checks. Real NSIS 3.11 compilation exercised locally using a user-extracted compiler, including native-path fixtures; this does not establish Windows installation behavior.",
     "desktop_adapter_tests": "PASS: 8 Node adapter tests covering API confinement, fixed controls, listener disposal, native exports, HTTPS documentation, drag behavior and generic error messages",
-    "rust_checks": "PASS: 9/9 Rust tests on Linux, including explicit project-Python integration for backend lifetime, desktop authentication, offline WAV, native-proxy Range/206, export and persistence. Native reqwest transport has no TLS dependency and is confined to HTTP loopback.",
+    "rust_checks": "PASS: 9/9 Rust tests on Linux and 9/9 on native Windows, including explicit project-Python integration for backend lifetime, desktop authentication, offline WAV, proxy Range/206, export and persistence. Native reqwest transport has no TLS dependency and is confined to HTTP loopback.",
     "javascript_syntax": "PASS: node --check for frontend app.js, desktop.js and native desktop/smoke.js",
     "browser_smoke": "PASS: existing browser-mode smoke and Chromium Tauri-adapter smoke with a mocked native bridge; reference import/preview, actual offline audio playback, WAV/ZIP/CSV export command routing, controls and documents. Mocked transport does not establish native WebView2 protocol/CORS/Range behavior.",
-    "windows_tauri_build": "IN PROGRESS: Windows CI run 43362318366; no successful native Tauri build result recorded yet",
-    "windows_bundled_backend": "PENDING: migration Windows CI build and bundled-interpreter checks",
-    "windows_desktop_smoke": "PENDING: real Windows WebView2 Tauri GUI/audio/protocol/export smoke; mock transport and cross-target cargo check are not substitutes",
-    "windows_native_install_upgrade_uninstall": "NOT RUN: WebView2 first-install and failure handling, shortcuts, upgrade from Electron with existing data, file-in-use detection, and uninstall data retention require native Windows verification",
+    "windows_tauri_build": "PASS: native Windows MSVC release build with Rust 1.100.0, locked Cargo dependencies, embedded frontend and application icon; all 27 hash-locked Windows Python distributions and payload manifest verified in CI run 43363388939",
+    "windows_bundled_backend": "PASS: bundled Windows Python imported the packaged backend, checked provider catalog/version, synthesized offline PCM WAV and stored/rehashed a private reference recording in isolated directories",
+    "windows_desktop_smoke": "PASS: actual Tauri/WebView2 window and private native protocol, isolated credential-free profile, binary reference File upload and audio preview, maximize/restore, single/comparison offline generation, audio metadata and muted playback progressing, persistent history, native WAV/ZIP/CSV exports, rejected invalid native actions/routes and model configuration page",
+    "windows_native_install_upgrade_uninstall": "PASS: native silent NSIS fresh install, reinstall, upgrade from the hash-verified published Electron v0.5.0 installer, and uninstall in a path containing spaces/Chinese text. Verified installed executable hashes, obsolete Electron payload removal, and unchanged sentinel files in the user profile and unrelated install-directory file. Interactive wizard and replacing a running app were not exercised.",
     "real_cloud_requests": "NOT RUN: no provider credentials or paid requests used",
     "app_code_signing": "NOT SIGNED: native application and setup are not code signed",
     "publication": "NOT PUBLISHED: migration work does not create a release tag or replace existing v0.5.0 assets",
-    "package_size": "NOT MEASURED for Tauri; earlier assessment was an estimate, not a build result",
+    "package_size": "MEASURED: candidate 5bc1bd4 portable ZIP 55,836,422 bytes and setup EXE 44,507,027 bytes; exact artifact sizes apply to CI run 43363388939",
     "local_kokoro": "PREVIOUS verification (2026-11-10): Linux CPU managed runtime, verified download and offline Chinese synthesis/playback/scoring/export. Not rerun for this UI/installer change",
     "local_qwen3": "PREVIOUS partial verification (2026-11-10): CPU dependencies/imports passed; full weights/inference not verified",
     "local_cosyvoice": "PREVIOUS partial verification (2026-11-10): CPU dependencies/imports passed; full weights/inference not verified",
     "local_indextts": "PASS in preceding source verification: complete verified weights/aux downloads, installation trial and actual local API generation with reference SHA256; Linux CPU, 3.947-second PCM16 WAV",
     "local_glmtts": "PARTIAL: official source and runtime imports passed; full GPU inference NOT RUN (no NVIDIA GPU)",
     "local_gpu": "NOT RUN: no NVIDIA GPU available",
-    "windows_msvc_cross_check": "PASS: Windows MSVC target cargo check with custom-protocol on Linux, using user-extracted LLVM 19 resource tooling. This is a cross-target compile check, not a linked or running Windows desktop application."
+    "windows_msvc_cross_check": "PASS: Windows MSVC target cargo check with custom-protocol on Linux, using user-extracted LLVM 19 resource tooling. This is a cross-target compile check, not a linked or running Windows desktop application.",
+    "artifact_integrity": "PASS within Windows CI: locked input SHA256, payload manifest hashes and final portable ZIP CRC checked; setup/ZIP SHA256 sidecars generated and uploaded. Independent candidate-artifact download verification NOT RUN: local Azure artifact download was denied by the environment proxy with HTTP 403.",
+    "webview2_missing_runtime_install": "NOT RUN: runner already had WebView2; first-time runtime bootstrapper installation and runtime-download failure behavior still require a suitable Windows host",
+    "interactive_windows_checks": "NOT RUN: interactive install wizard, Save As dialog selection, actual speaker output, SmartScreen experience and replacing an application while running; native audio smoke uses muted playback"
   },
   "release_integrity": "Build scripts retain locked Python/wheel and WebView2-bootstrapper SHA256 checks, final ZIP CRC and payload manifest hashes; SHA256 sidecars are generated for ZIP and setup EXE. Rust uses Cargo.lock.",
   "persistent_config": "%LOCALAPPDATA%\\TTS Lab\\credentials.env (plaintext, user-owned)",
@@ -86,10 +89,31 @@
     }
   ],
   "validation_candidate": {
-    "commit": "8cd1a62a97feaebbb1bd58c7fd7279acb2d73776",
-    "scope": "Local migration checks below cover this candidate; subsequent smoke-profile isolation and application-icon source changes require their own verification before completion.",
-    "draft_pr_url": "https://github.com/whoarei/tts-lab/pull/1",
-    "windows_workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43362318366",
-    "windows_workflow_status": "IN PROGRESS: do not treat workflow dispatch or cross-check success as a native build or desktop-smoke pass"
+    "commit": "5bc1bd448986a7d4bc7c397ab36576e1f81ea1c6",
+    "scope": "Successful Windows release-mode candidate build; subsequent documentation-only commits may change packaged documentation and byte counts without changing the tested desktop behavior.",
+    "pull_request_url": "https://github.com/whoarei/tts-lab/pull/1",
+    "windows_workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43363388939",
+    "windows_workflow_status": "PASS: completed successfully on 2026-11-13; release job skipped because the candidate branch is not a release tag",
+    "preceding_windows_workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43362318366",
+    "artifact_url": "https://github.com/whoarei/tts-lab/actions/runs/43363388939/artifacts/14008973784"
+  },
+  "migration_artifacts": {
+    "source_commit": "5bc1bd448986a7d4bc7c397ab36576e1f81ea1c6",
+    "workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43363388939",
+    "artifact_url": "https://github.com/whoarei/tts-lab/actions/runs/43363388939/artifacts/14008973784",
+    "portable_zip": {
+      "name": "TTS-Lab-0.5.0-win-x64.zip",
+      "bytes": 55836422,
+      "MiB": 53.25,
+      "reduction_vs_published_electron_percent": 73.68
+    },
+    "installer": {
+      "name": "TTS-Lab-0.5.0-win-x64-setup.exe",
+      "bytes": 44507027,
+      "MiB": 42.45,
+      "reduction_vs_published_electron_percent": 71.18
+    },
+    "publication": "Actions development artifact only; published Electron v0.5.0 release assets are unchanged",
+    "independent_download_verification": "NOT RUN: local Azure artifact download blocked by proxy HTTP 403; integrity checks above ran inside Windows CI"
   }
 }
