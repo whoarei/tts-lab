@@ -134,6 +134,39 @@ class LocalTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(m.LocalModelError):
                 m.extract_archive(archive,self.root/'extracted')
 
+    async def test_auxiliary_download_allowlist_excludes_unneeded_weights(self):
+        content = b'codec'
+        revision = 'a' * 40
+        metadata = {'sha': revision, 'siblings': [
+            {'rfilename': name, 'size': len(content), 'lfs': {'sha256': hashlib.sha256(content).hexdigest(), 'size': len(content)}}
+            for name in ['semantic_codec/model.safetensors', 'huge_other_model.pth']]}
+        requests = []
+        def respond(request):
+            requests.append(request)
+            return httpx.Response(200, json=metadata) if '/api/models/' in request.url.path else httpx.Response(200, content=content)
+        with patch.object(m.shutil, 'disk_usage', return_value=type('Disk', (), {'free': 30 * 1024**3})()):
+            async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+                await m.download_hub(client, 'indextts-2', self.root / 'aux', repo='amphion/MaskGCT', filenames=['semantic_codec/model.safetensors'])
+        self.assertEqual(len(requests), 2)
+        self.assertTrue(requests[-1].url.path.endswith('/semantic_codec/model.safetensors'))
+        self.assertFalse((self.root / 'aux' / 'huge_other_model.pth').exists())
+
+    async def test_new_weight_formats_and_only_documented_tokenizer_code_download(self):
+        names = ['weights.pth', 'generator.ckpt', 'vq32k-phoneme-tokenizer/tokenization_chatglm.py', 'unrequested.py']
+        metadata = {'sha': 'a' * 40, 'siblings': [
+            {'rfilename': name, 'size': 1, 'blobId': hashlib.sha1(b'blob 1\0x').hexdigest()} for name in names]}
+        requests = []
+        def respond(request):
+            requests.append(request)
+            return httpx.Response(200, json=metadata) if '/api/models/' in request.url.path else httpx.Response(200, content=b'x')
+        with patch.object(m.shutil, 'disk_usage', return_value=type('Disk', (), {'free': 30 * 1024**3})()):
+            async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+                await m.download_hub(client, 'glm-tts', self.root / 'weights')
+        self.assertEqual(len(requests), 4)
+        self.assertFalse((self.root / 'weights' / 'unrequested.py').exists())
+        for name in names[:-1]:
+            self.assertTrue((self.root / 'weights' / name).is_file())
+
     async def test_restarted_install_and_missing_runtime_not_ready(self):
         m._update('kokoro-v1.1',state='downloading',message='old')
         self.assertEqual(m.status('kokoro-v1.1')['state'],'interrupted')
@@ -156,7 +189,7 @@ class LocalTests(unittest.IsolatedAsyncioTestCase):
             await m.cancel_install('qwen3-0.6b')
 
     async def test_invalid_model_and_device_do_not_start_downloads(self):
-        for model,device in [('../private','cpu'),('kokoro-v1.1','cuda'),('qwen3-0.6b','invalid')]:
+        for model,device in [('../private','cpu'),('kokoro-v1.1','cuda'),('qwen3-0.6b','invalid'),('glm-tts','cpu')]:
             with self.assertRaises(m.LocalModelError): m.start_install(model,device)
         self.assertFalse(m.TASKS)
 
@@ -258,7 +291,7 @@ class LocalTests(unittest.IsolatedAsyncioTestCase):
     async def test_model_routes_enforce_local_token_and_hide_internal_paths(self):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=application.app),base_url='http://127.0.0.1:8765') as c:
             result=await c.get('/api/local-models')
-            self.assertEqual(len(result.json()['models']),4)
+            self.assertEqual(len(result.json()['models']),6)
             self.assertNotIn(str(self.root),result.text)
             self.assertEqual((await c.post('/api/local-models/kokoro-v1.1/install',json={'device':'cpu'})).status_code,403)
             self.assertEqual((await c.delete('/api/local-models/kokoro-v1.1')).status_code,403)

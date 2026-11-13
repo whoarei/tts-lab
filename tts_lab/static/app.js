@@ -7,7 +7,7 @@ const el = (tag, text, cls) => {
   return node;
 };
 const newSession = () => ({runs: [], batch: '', order: [], drafts: {}});
-const S = {desktop: false, token: '', providers: [], variants: [], savedVariants: [], selected: '',
+const S = {desktop: false, token: '', providers: [], references: [], variants: [], savedVariants: [], selected: '',
   page: 'test', busy: false, saving: false, dirty: false, ready: false,
   sessions: {test: newSession(), compare: newSession()}};
 const samples = [
@@ -118,7 +118,9 @@ function renderSelection() {
   const list = el('dl', undefined, 'parameter-list');
   for (const field of item.fields) {
     const value = variant.params[field.key];
-    list.append(el('dt', field.label), el('dd', typeof value === 'boolean' ? (value ? '开启' : '关闭') : value === '' ? '默认' : String(value)));
+    const display = field.type === 'reference' ? (S.references.find(ref => ref.id === value)?.name || '未选择或录音不可用')
+      : typeof value === 'boolean' ? (value ? '开启' : '关闭') : value === '' ? '默认' : String(value);
+    list.append(el('dt', field.label), el('dd', display));
   }
   root.append(list);
   $('#test-run-hint').textContent = item.family === 'demo' ? '离线演示 · 提示音，非人声' : item.family === 'local' ? '本地离线生成 · 最多 300 字' : '使用所选云服务生成';
@@ -151,17 +153,34 @@ function renderVariants() {
       if (['text', 'textarea'].includes(field.type)) label.classList.add('wide');
       label.append(el('span', field.label));
       let input;
-      if (field.type === 'select') {
+      if (field.type === 'reference') {
+        label.classList.add('wide');
+        input = el('select'); input.append(option('', '请选择或导入参考录音'));
+        for (const ref of S.references) input.append(option(ref.id, `${ref.name} · ${ref.duration_seconds} 秒`));
+      } else if (field.type === 'select') {
         input = el('select');
         for (const value of field.options || []) input.append(typeof value === 'object' ? option(value.value, value.label) : option(value));
       } else if (field.type === 'textarea') { input = el('textarea'); input.rows = 2; }
       else { input = el('input'); input.type = ['number', 'checkbox'].includes(field.type) ? field.type : 'text'; }
       input.dataset.param = field.key;
+      input.setAttribute('aria-label', field.label);
       if (field.type === 'checkbox') input.checked = !!variant.params[field.key]; else input.value = variant.params[field.key] ?? '';
       for (const key of ['min', 'max', 'step']) if (field[key] !== undefined) input[key] = field[key];
       input.oninput = () => { variant.params[field.key] = field.type === 'checkbox' ? input.checked : field.type === 'number' ? Number(input.value) : input.value; markDirty(); };
-      if (field.type === 'select') input.onchange = () => { input.oninput(); if (field.key === 'model') renderVariants(); };
-      label.append(input); if (field.help) label.append(el('small', field.help)); fields.append(label);
+      if (['select', 'reference'].includes(field.type)) input.onchange = () => { input.oninput(); if (field.key === 'model' || field.type === 'reference') renderVariants(); };
+      label.append(input);
+      if (field.type === 'reference') {
+        const upload = el('input'); upload.type = 'file'; upload.accept = '.wav,audio/wav';
+        upload.setAttribute('aria-label', '导入参考录音');
+        upload.onchange = () => { if (upload.files[0]) void uploadReference(upload.files[0], variant); };
+        label.append(upload, el('small', '仅导入你有权使用的声音，3–10 秒 PCM WAV；录音保存在本机，不上传云端。'));
+        if (variant.params[field.key]) {
+          const preview = el('audio'); preview.controls = true; preview.preload = 'none';
+          preview.src = `/api/references/${encodeURIComponent(variant.params[field.key])}/audio`;
+          label.append(preview);
+        }
+      }
+      if (field.help) label.append(el('small', field.help)); fields.append(label);
     }
     card.append(fields);
     if (item.docs) { const link = el('a', '官方接口说明 ↗', 'doc-link'); link.href = item.docs; link.target = '_blank'; link.rel = 'noreferrer'; card.append(link); }
@@ -343,7 +362,7 @@ async function init() {
   updateText(samples[0][1]);
   try {
     const [data, saved] = await Promise.all([api('/api/state'), api('/api/variants')]);
-    S.token = data.token; S.providers = data.providers; S.desktop = !!data.desktop;
+    S.token = data.token; S.providers = data.providers; S.references = data.references || []; S.desktop = !!data.desktop;
     if (saved.variants.length) { S.variants = copy(saved.variants); S.savedVariants = copy(saved.variants); S.selected = saved.selected_uid; }
     else {
       const demo = S.providers.find(item => item.family === 'demo'), ready = S.providers.filter(item => item.ready && item.family !== 'demo');
@@ -355,6 +374,7 @@ async function init() {
     S.ready = true; renderVariants(); renderSelection(); renderServices();
     $('#add-variant').onclick = () => { S.variants.push(makeVariant(S.variants.at(-1)?.provider || 'demo')); markDirty(); renderVariants(); };
     $('#save-variants').onclick = saveVariants; $('#test-variant').onchange = selectVariant;
+    $('#local-device').onchange = () => void refreshModels();
     if (S.page === 'models') void refreshModels();
   } catch (error) { notice(`无法加载工作台：${error.message}`, true); lockControls(); }
 }
@@ -400,7 +420,7 @@ async function refreshModels() {
       }
       const actions = el('div', undefined, 'model-actions');
       const install = el('button', model.ready ? '已安装' : ['failed','interrupted','incomplete'].includes(model.state) ? '重试安装' : '下载并安装', 'secondary');
-      install.disabled = model.ready || busy;
+      install.disabled = model.ready || busy || !model.devices.includes(model.engine === 'kokoro' ? 'cpu' : $('#local-device').value);
       install.onclick = () => modelAction(model.id, 'install');
       actions.append(install);
       if (model.busy) {
@@ -427,5 +447,19 @@ async function refreshModels() {
     $('#model-notice').textContent = `无法更新模型状态：${e.message}`;
     if (S.page === 'models') modelTimer = setTimeout(refreshModels, 5000);
   }
+}
+async function uploadReference(file, variant) {
+  if (file.size > 2 * 1024 * 1024) { notice('参考录音超过 2 MB，请使用 3–10 秒 WAV。', true); return; }
+  try {
+    const ref = await api('/api/references?name=' + encodeURIComponent(file.name), {
+      method: 'POST', headers: {'Content-Type': 'audio/wav'}, body: file
+    });
+    S.references.push(ref);
+    if (provider(variant.provider).fields.some(field => field.key === 'reference_id')) {
+      variant.params.reference_id = ref.id; markDirty();
+    }
+    renderVariants();
+    notice('参考录音已保存在本机。填写所需逐字稿后保存方案，即可在「文本测试」使用。');
+  } catch (error) { notice(error.message, true); }
 }
 init();

@@ -3,8 +3,10 @@
 Uses only the demo provider. Screenshots/downloads go to TTS_LAB_SCREENSHOTS or /tmp.
 """
 import json
+import io
 import os
 from pathlib import Path
+import wave
 import zipfile
 from playwright.sync_api import sync_playwright
 
@@ -27,6 +29,33 @@ with sync_playwright() as p:
     assert not page.locator('#page-models').is_visible()
     assert not page.locator('#window-controls').is_visible()
     page.click('[data-page=compare]')
+    first = page.locator('.variant').first
+    for provider_id, credential in [('mimo', 'MIMO_API_KEY'), ('doubao', 'VOLCENGINE_TTS_API_KEY'),
+                                     ('stepfun', 'STEP_API_KEY'), ('fish', 'FISH_AUDIO_API_KEY')]:
+        first.locator('.provider').select_option(provider_id)
+        assert credential in first.inner_text()
+    first.locator('.provider').select_option('local_indextts')
+    buffer = io.BytesIO()
+    with wave.open(buffer, 'wb') as writer:
+        writer.setnchannels(1); writer.setsampwidth(2); writer.setframerate(24000)
+        writer.writeframes(b'\0\1' * 72000)
+    first.get_by_label('导入参考录音', exact=True).set_input_files({
+        'name': 'reference-test.wav', 'mimeType': 'audio/wav', 'buffer': buffer.getvalue()})
+    page.wait_for_function("() => document.querySelector('.variant [data-param=reference_id]').value.length === 32")
+    reference_id = first.locator('[data-param=reference_id]').input_value()
+    assert first.locator('audio').count() == 1
+    first.locator('.provider').select_option('local_glmtts')
+    first.locator('[data-param=reference_id]').select_option(reference_id)
+    first.locator('[data-param=reference_text]').fill('这是参考录音的逐字稿。')
+    page.locator('#coverage-note summary').click()
+    assert 'DeepSeek' in page.locator('#coverage-note').inner_text()
+    page.click('#save-variants')
+    page.wait_for_function("() => document.querySelector('#save-state').textContent === '已保存到本机'")
+    page.reload()
+    page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
+    page.click('[data-page=compare]')
+    assert first.locator('[data-param=reference_id]').input_value() == reference_id
+    assert first.locator('[data-param=reference_text]').input_value() == '这是参考录音的逐字稿。'
     while page.locator('.variant').count() < 2:
         page.click('#add-variant')
     while page.locator('.variant').count() > 2:
@@ -101,7 +130,8 @@ with sync_playwright() as p:
     assert page.locator('#compare-consent-row').is_hidden()
     page.click('[data-page=models]')
     page.wait_for_selector('.model-card')
-    assert page.locator('.model-card').count() == 4
+    assert page.locator('.model-card').count() == 6
+    assert page.locator('[data-model="glm-tts"] button').first.is_disabled()
     page.select_option('#local-device', 'cuda')
     page.select_option('#local-device', 'cpu')
     page.screenshot(path=str(output / 'tts-lab-models.png'), full_page=True)
@@ -114,6 +144,11 @@ with sync_playwright() as p:
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), (width, target)
     page.click('[data-page=test]')
     page.screenshot(path=str(output / 'tts-lab-mobile.png'), full_page=True)
+    page.click('[data-page=compare]')
+    page.locator('.variant .provider').first.select_option('local_indextts')
+    page.locator('.variant [data-param=reference_id]').first.select_option(reference_id)
+    page.set_viewport_size({'width': 320, 'height': 844})
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     assert not errors, errors
     print('UI passed: three pages, saved schemes/reload, single-vs-multi payloads, independent results, audio, ZIP, history, consent, responsive layout; no JS errors.')
     browser.close()

@@ -35,5 +35,39 @@
   "release_integrity": "Build scripts validate locked inputs, final ZIP CRC and all payload hashes, write BUILD-MANIFEST.json, and generate SHA256 sidecars for ZIP and setup EXE.",
   "persistent_config": "%LOCALAPPDATA%\\TTS Lab\\credentials.env (plaintext, user-owned)",
   "persistent_data": "%LOCALAPPDATA%\\TTS Lab\\data",
-  "persistent_variants": "%LOCALAPPDATA%\\TTS Lab\\data\\variants.json"
+  "persistent_variants": "%LOCALAPPDATA%\\TTS Lab\\data\\variants.json",
+  "source_updates": [
+    {
+      "checked_on": "2026-11-13",
+      "scope": "MiMo and ByteDance Doubao adapters; model coverage notes and DeepSeek public API check",
+      "python_unittest": "PASS: 64 tests; all cloud calls mocked",
+      "desktop_node_tests": "PASS: 8 tests",
+      "browser_smoke": "PASS: Linux Chromium desktop/mobile; new provider selection and fields, coverage note, demo playback, blind reveal, ZIP and history; no JavaScript errors",
+      "javascript_syntax_and_diff": "PASS",
+      "real_cloud_requests": "NOT RUN: no provider credentials or paid requests used",
+      "windows_package": "NOT BUILT OR PUBLISHED: existing 0.3.0 ZIP does not contain this source update"
+    },
+    {
+      "checked_on": "2026-11-13",
+      "scope": "StepAudio and Fish Audio hosted APIs; IndexTTS-2 and GLM-TTS local download/inference; private reference WAV import",
+      "python_unittest": "PASS: 78 tests; all cloud requests mocked",
+      "desktop_node_tests": "PASS: 8 tests",
+      "browser_smoke": "PASS: Linux Chromium; four added provider forms, reference WAV import/preview, six model choices, GPU-only GLM install guard, 320px mobile layout, offline playback and exports",
+      "local_runtime_imports": "PASS: both isolated Python 3.11 CPU dependency environments installed; pinned official IndexTTS2 and GLM inference modules imported",
+      "local_indextts_cpu": "PASS: verified full weights and required auxiliary downloads, successful installation trial, actual reference import and local API batch without cloud consent; 3.947-second non-silent PCM16 WAV, 174124 bytes, peak 16531, 147.33-second cold request; reference SHA256 retained",
+      "local_glmtts": "PARTIAL: pinned source/hash extraction and official inference imports passed; full weights and GPU generation NOT RUN because this environment has no NVIDIA GPU",
+      "windows_native": "NOT RUN: portable normalizer entry points mocked; no native Windows or GPU execution",
+      "real_cloud_requests": "NOT RUN: no provider keys or paid calls used",
+      "fish_local_weights": "NOT ADDED: Fish Audio uses the official hosted TTS API",
+      "windows_package": "NOT BUILT OR PUBLISHED: existing 0.3.0 ZIP does not contain these source updates"
+    },
+    {
+      "checked_on": "2026-11-13",
+      "scope": "Rebase expanded TTS support onto main dcd8e97407b5e4575e422075b482180b1d416cb3 (0.4.1); preserve installer, three-page interface, saved schemes and native window controls",
+      "python_unittest": "PASS: 87 tests run, 86 passed, 1 NSIS compiler check skipped because makensis is not installed",
+      "desktop_node_tests": "PASS: 8 tests",
+      "browser_smoke": "PASS: three pages, reference WAV import, GLM reference/transcript saved and restored after reload, single-vs-comparison payloads, independent results, demo playback, ZIP/history/consent, six local model choices and 320px layout; no JavaScript errors",
+      "windows_package": "NOT BUILT OR PUBLISHED: this updates main source without creating a release tag"
+    }
+  ]
 }

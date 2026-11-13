@@ -42,6 +42,17 @@ MODELS = {
         repo='FunAudioLLM/CosyVoice-300M-SFT',
         required=['cosyvoice.yaml', 'llm.pt', 'flow.pt', 'hift.pt', 'spk2info.pt',
                   'campplus.onnx', 'speech_tokenizer_v1.onnx']),
+    'indextts-2': dict(name='IndexTTS-2 · 参考声音', engine='indextts',
+        size='约 8 GB 权重与辅助模型；另需独立推理环境', ram='建议 16 GB 以上内存；CPU 较慢，可选 NVIDIA GPU',
+        docs='https://github.com/index-tts/index-tts', license='IndexTTS 模型许可（见官方说明）',
+        repo='IndexTeam/IndexTTS-2', required=['config.yaml', 'bpe.model', 'gpt.pth', 's2mel.pth',
+                  'wav2vec2bert_stats.pt', 'feat1.pt', 'feat2.pt']),
+    'glm-tts': dict(name='GLM-TTS · 参考声音', engine='glmtts', devices=['cuda'],
+        size='约 9 GB 权重；另需独立推理环境', ram='需要 NVIDIA GPU，建议 16 GB 以上显存；不支持 CPU 模式',
+        docs='https://github.com/zai-org/GLM-TTS', license='Apache-2.0；官方示例录音另有许可',
+        repo='zai-org/GLM-TTS', required=['llm/config.json', 'llm/model.safetensors.index.json',
+                  'flow/config.yaml', 'flow/flow.pt', 'hift/hift.pt', 'speech_tokenizer/model.safetensors',
+                  'vq32k-phoneme-tokenizer/tokenization_chatglm.py', 'vocos2d/generator_jit.ckpt']),
 }
 ASSETS = {
     'kokoro': ('https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2',
@@ -50,6 +61,12 @@ ASSETS = {
                   '10c587f0853db27667a64a0a2dc0788b1c782cdab223682691db78702082a550'),
     'matcha': ('https://github.com/shivammehta25/Matcha-TTS/archive/dd9105b34bf2be2230f4aa1e4769fb586a3c824e.tar.gz',
                '59c43afae79110e4057eaa43f45b5558b556435da8fc85eab83f0c819ba3358d'),
+    'glmtts': ('https://codeload.github.com/zai-org/GLM-TTS/tar.gz/4b944f4be7b6c55454751715081f4dc83992897a',
+               '92de92260301cebf89c06c0edbeeadec0025721c79c552d5e97622212b76ce47'),
+    'indextts': ('https://codeload.github.com/index-tts/index-tts/tar.gz/d9e41aac89fd00b3d71497fddb287b7f24613712',
+                 '38ad78b770c1f09dd2028347713f2137d818aca2658ac4be6fccc000af3ba4f3'),
+    'indextts_sample': ('https://huggingface.co/spaces/IndexTeam/IndexTTS-2-Demo/resolve/b01840e8e4fd9753743a6d0466cd73ae1d634a68/examples/voice_01.wav',
+                        'e33e6ee0107a1dd58e1d66dd90c13df3d55a8683047cc3d7ea206dad84ed3fc8'),
 }
 PACKAGES = {
     'kokoro': ['sherpa-onnx==2.0.1', 'numpy==1.26.4', 'soundfile==0.12.1'],
@@ -60,6 +77,20 @@ PACKAGES = {
         'openai-whisper==20231117', 'soundfile==0.12.1', 'transformers==4.51.3',
         'x-transformers==2.11.24', 'rich==13.7.1', 'wget==3.2', 'setuptools<81',
         'gdown==5.1.0', 'matplotlib==3.7.5'],
+    'indextts': ['numpy==1.26.4', 'accelerate==1.8.1', 'einops==0.8.1',
+        'librosa==0.10.2.post1', 'omegaconf==2.3.0', 'modelscope==1.27.0', 'munch==4.0.0',
+        'safetensors==0.5.2', 'sentencepiece==0.2.1', 'transformers==4.52.1',
+        'tokenizers==0.21.0', 'soundfile==0.12.1', 'descript-audiotools==0.7.2',
+        'openai-whisper==20231117', 'matplotlib==3.10.0', 'WeTextProcessing==1.0.3; sys_platform == "linux"',
+        'wetext==0.0.9; sys_platform != "linux"', 'setuptools<81'],
+    'glmtts': ['numpy==1.26.4', 'scipy==1.15.3', 'sentencepiece==0.1.99',
+        'soundfile==0.12.1', 'tiktoken==0.6.0', 'tqdm==4.66.4', 'transformers==4.57.3',
+        'x-transformers==1.42.26', 'inflect==7.3.1', 'onnxruntime==1.19.0',
+        'contractions==0.1.73', 'einops==0.8.1', 'emoji==2.14.1', 'HyperPyYAML==1.2.2',
+        'jieba==0.42.1', 'librosa==0.9.2', 'soxr==1.0.0', 'peft==0.7.0', 'pronouncing==0.2.0',
+        'pypinyin==0.44.0', 'PyYAML==6.0.3', 'regex==2023.12.25', 'safetensors==0.7.0',
+        'WeTextProcessing==1.0.3; sys_platform == "linux"',
+        'wetext==0.0.9; sys_platform != "linux"', 'setuptools<81'],
 }
 TASKS: dict[str, asyncio.Task] = {}
 INFERENCE = asyncio.Lock()
@@ -97,6 +128,12 @@ def runtime_signature(engine, device):
     return hashlib.sha256(json.dumps([PACKAGES[engine], device, 1]).encode()).hexdigest()
 
 
+def weights_path(model_id):
+    folder = model_root() / model_id
+    # Upstream GLM uses relative ckpt/ paths; keep its layout without symlinks.
+    return folder / 'source' / 'ckpt' if MODELS[model_id]['engine'] == 'glmtts' else folder / 'model'
+
+
 def status(model_id):
     spec = spec_for(model_id)
     folder = model_root() / model_id
@@ -119,7 +156,8 @@ def status(model_id):
     elif result.get('state') == 'ready':
         result.update(state='incomplete', message='文件或运行环境不完整，请重新安装。')
     return {'id': model_id, **{k: spec[k] for k in ('name', 'engine', 'size', 'ram', 'docs', 'license')},
-            **result, 'ready': installed, 'device': device, 'busy': active}
+            **result, 'devices': spec.get('devices', ['cpu'] if spec['engine'] == 'kokoro' else ['cpu', 'cuda']),
+            'ready': installed, 'device': device, 'busy': active}
 
 
 def list_models():
@@ -321,8 +359,9 @@ async def prepare_runtime(model_id, device):
     if not python.is_file():
         await command([uv, 'venv', '--managed-python', '--python', '3.11.14', python.parent.parent], env=env)
     if engine != 'kokoro':
-        version = '2.6.0' if engine == 'qwen3' else '2.3.1'
-        index = 'https://download.pytorch.org/whl/' + ('cpu' if device == 'cpu' else 'cu121' if engine == 'cosyvoice' else 'cu124')
+        version = {'qwen3': '2.6.0', 'indextts': '2.8.0'}.get(engine, '2.3.1')
+        cuda_index = {'cosyvoice': 'cu121', 'glmtts': 'cu121', 'indextts': 'cu128'}.get(engine, 'cu124')
+        index = 'https://download.pytorch.org/whl/' + ('cpu' if device == 'cpu' else cuda_index)
         await command([uv, 'pip', 'install', '--python', python, '--index-url', index,
                        f'torch=={version}', f'torchaudio=={version}'], env=env)
     constraints = python.parent.parent / 'build-constraints.txt'
@@ -335,11 +374,12 @@ async def prepare_runtime(model_id, device):
     return python
 
 
-async def download_hub(client, model_id, folder):
+async def download_hub(client, model_id, folder, *, repo=None, filenames=None):
     spec = MODELS[model_id]
+    repo = repo or spec['repo']
     meta = read_json(folder / 'snapshot.json')
-    if meta.get('repo') != spec['repo'] or not meta.get('siblings'):
-        r = await response(client, f'https://huggingface.co/api/models/{spec["repo"]}/revision/main?blobs=true')
+    if meta.get('repo') != repo or not meta.get('siblings'):
+        r = await response(client, f'https://huggingface.co/api/models/{repo}/revision/main?blobs=true')
         try:
             raw = bytearray()
             async for chunk in r.aiter_bytes(64 * 1024):
@@ -352,12 +392,17 @@ async def download_hub(client, model_id, folder):
     revision = meta.get('sha', '')
     if len(revision) != 40 or any(c not in '0123456789abcdef' for c in revision):
         raise LocalModelError('无法确定模型快照版本。')
-    meta['repo'] = spec['repo']
+    meta['repo'] = repo
     meta['revision'] = revision
     # Freeze metadata before downloading, so retrying never mixes two revisions.
     write_json(folder / 'snapshot.json', meta)
-    files = [f for f in meta['siblings'] if PurePosixPath(f['rfilename']).suffix.lower()
-             in {'.json', '.safetensors', '.bin', '.pt', '.onnx', '.yaml', '.model', '.tiktoken', '.txt', '.npy', '.npz', '.md'}]
+    extensions = {'.json', '.safetensors', '.bin', '.pt', '.pth', '.ckpt', '.onnx', '.yaml', '.model', '.tiktoken', '.txt', '.npy', '.npz', '.md', '.jinja'}
+    files = [f for f in meta['siblings'] if
+             (filenames is None and PurePosixPath(f['rfilename']).suffix.lower() in extensions) or
+             (filenames is not None and f['rfilename'] in filenames) or
+             (repo == 'zai-org/GLM-TTS' and f['rfilename'] == 'vq32k-phoneme-tokenizer/tokenization_chatglm.py')]
+    if filenames and set(filenames) - {f['rfilename'] for f in files}:
+        raise LocalModelError('模型源缺少所需的辅助文件。')
     total = sum(f.get('lfs', {}).get('size', f.get('size', 0)) for f in files)
     if total > 20 * 1024**3 or shutil.disk_usage(model_root()).free < total + 3 * 1024**3:
         raise LocalModelError('磁盘空间不足，或模型超过 20 GB 上限。')
@@ -369,7 +414,7 @@ async def download_hub(client, model_id, folder):
         if not digest:
             raise LocalModelError('模型源缺少文件校验信息。')
         _update(model_id, message=f'正在下载模型文件 {i + 1}/{len(files)}', state='downloading')
-        await download(client, f'https://huggingface.co/{spec["repo"]}/resolve/{revision}/{quote(name, safe="/")}',
+        await download(client, f'https://huggingface.co/{repo}/resolve/{revision}/{quote(name, safe="/")}',
                        folder / name, digest, model_id, 'sha256' if lfs else 'sha1',
                        file.get('size', lfs.get('size') if lfs else None))
 
@@ -385,28 +430,50 @@ async def install(model_id, device):
             raise LocalModelError('至少需要 3 GB 可用磁盘空间；大型模型需要更多空间。')
         python = await prepare_runtime(model_id, device)
         async with httpx.AsyncClient(timeout=httpx.Timeout(180, connect=20), follow_redirects=False) as client:
+            if spec['engine'] in {'glmtts', 'indextts'}:
+                engine = spec['engine']
+                archive = model_root() / 'downloads' / f'{engine}.tar.gz'
+                await download(client, ASSETS[engine][0], archive, ASSETS[engine][1], model_id)
+                await extract(archive, folder / 'source')
             if spec['engine'] == 'kokoro':
                 _update(model_id, state='downloading', message='正在下载 Kokoro 多语言模型。')
                 archive = model_root() / 'downloads' / 'kokoro.tar.bz2'
                 await download(client, ASSETS['kokoro'][0], archive, ASSETS['kokoro'][1], model_id)
                 await extract(archive, folder / 'model')
             else:
-                await download_hub(client, model_id, folder / 'model')
+                files = spec['required'] + ['LICENSE.txt', 'LICENSE_ZH.txt', 'README.md'] if spec['engine'] == 'indextts' else None
+                await download_hub(client, model_id, weights_path(model_id), filenames=files)
+            if spec['engine'] == 'indextts':
+                await download(client, ASSETS['indextts_sample'][0], folder / 'source' / 'examples' / 'voice_01.wav',
+                               ASSETS['indextts_sample'][1], model_id, expected_size=478050)
+                for repo, dest, filenames in [
+                    ('facebook/w2v-bert-2.0', 'w2v', ['config.json', 'model.safetensors', 'preprocessor_config.json']),
+                    ('amphion/MaskGCT', 'codec', ['semantic_codec/model.safetensors']),
+                    ('funasr/campplus', 'campplus', ['campplus_cn_common.bin']),
+                    ('nvidia/bigvgan_v2_22khz_80band_256x', 'bigvgan', ['config.json', 'bigvgan_generator.pt']),
+                ]:
+                    await download_hub(client, model_id, folder / 'model' / 'aux' / dest, repo=repo, filenames=filenames)
             if spec['engine'] == 'cosyvoice':
                 for asset, dest in [('cosyvoice', folder / 'source'), ('matcha', folder / 'source' / 'third_party' / 'Matcha-TTS')]:
                     archive = model_root() / 'downloads' / f'{asset}.tar.gz'
                     await download(client, ASSETS[asset][0], archive, ASSETS[asset][1], model_id)
                     include = ['cosyvoice', 'LICENSE', 'NOTICE'] if asset == 'cosyvoice' else ['matcha', 'LICENSE']
                     await extract(archive, dest, include)
-        if not all((folder / 'model' / name).exists() for name in spec['required']):
+        if not all((weights_path(model_id) / name).exists() for name in spec['required']):
             raise LocalModelError('模型文件不完整，请重新下载。')
         _update(model_id, state='verifying', message='正在离线加载模型并试生成，首次 CPU 加载可能需要几分钟。')
         from .catalog import CATALOG
         fields = next(p for p in CATALOG if p['id'] == 'local_' + spec['engine'])['fields']
         params = {f['key']: f['default'] for f in fields}
+        if spec['engine'] == 'glmtts':
+            params['reference_text'] = '他当时还跟线下其他的站姐吵架，然后，打架进局子了。'
+        sample = {'glmtts': 'examples/prompt/jiayan_zh.wav', 'indextts': 'examples/voice_01.wav'}.get(spec['engine'])
         output = folder / 'smoke.wav'
         async with INFERENCE:
-            await run_worker(model_id, device, params, '你好。', output, python)
+            if sample:
+                await run_worker(model_id, device, params, '你好。', output, python, reference=folder / 'source' / sample)
+            else:
+                await run_worker(model_id, device, params, '你好。', output, python)
         from .providers import _audio
         _audio(output.read_bytes())
         output.unlink()
@@ -424,7 +491,7 @@ async def install(model_id, device):
 
 def start_install(model_id, device):
     spec = spec_for(model_id)
-    if device not in {'cpu', 'cuda'} or (spec['engine'] == 'kokoro' and device != 'cpu'):
+    if device not in spec.get('devices', ['cpu'] if spec['engine'] == 'kokoro' else ['cpu', 'cuda']):
         raise LocalModelError('该模型不支持所选运行设备。')
     if any(not task.done() for task in TASKS.values()):
         raise LocalModelError('已有模型正在安装，请等待完成或取消后再操作。')
@@ -458,12 +525,20 @@ async def remove_model(model_id):
             await asyncio.to_thread(shutil.rmtree, folder)
 
 
-async def run_worker(model_id, device, params, text, output, python=None):
+async def run_worker(model_id, device, params, text, output, python=None, *, reference=None):
     spec = spec_for(model_id)
     folder = model_root() / model_id
-    request = dict(engine=spec['engine'], model_dir=str(folder / 'model'),
+    request = dict(engine=spec['engine'], model_dir=str(weights_path(model_id)),
                    source_dir=str(folder / 'source'), text=text, params=params,
                    device=device, output=str(output))
+    if spec['engine'] in {'glmtts', 'indextts'}:
+        from .reference_audio import path_for, ReferenceError
+        try:
+            request['reference_audio'] = str(reference or path_for(params.get('reference_id', '')))
+            if reference is not None and not Path(reference).is_file():
+                raise LocalModelError('试生成参考录音缺失，请重试模型安装。')
+        except ReferenceError as exc:
+            raise LocalModelError(str(exc)) from None
     await command([python or runtime_python(spec['engine'], device), Path(__file__).with_name('local_worker.py')],
                   env=command_env(device, offline=True), stdin=json.dumps(request, ensure_ascii=False).encode(), timeout=1800)
 

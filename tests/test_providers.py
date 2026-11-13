@@ -21,6 +21,18 @@ ENV = {key: 'test-secret-not-for-browser' for c in CATALOG for key in c['env']}
 ENV['AZURE_SPEECH_REGION'] = 'eastus'
 
 
+class FragmentedResponse(httpx.AsyncByteStream):
+    async def __aiter__(self):
+        # Deliberately split JSON and base64 across transport chunks.
+        raw = b'\n'.join(json.dumps(item).encode() for item in [
+            {'code': 0, 'data': base64.b64encode(MP3[:7]).decode()},
+            {'code': 0, 'data': None, 'sentence': {'text': 'hello'}},
+            {'code': 0, 'data': base64.b64encode(MP3[7:]).decode()},
+            {'code': 20000000, 'data': None}])
+        for i in range(0, len(raw), 5):
+            yield raw[i:i+5]
+
+
 class AdapterTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.env = patch.dict(os.environ, ENV)
@@ -48,6 +60,12 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, content=WAV)
         if host == 'api.minimax.io':
             return httpx.Response(200, json={'base_resp': {'status_code': 0}, 'data': {'audio': MP3.hex()}})
+        if host == 'api.xiaomimimo.com':
+            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'audio': {'data': base64.b64encode(WAV).decode()}}}]})
+        if host == 'openspeech.bytedance.com':
+            return httpx.Response(200, stream=FragmentedResponse())
+        if host in {'api.stepfun.com', 'api.stepfun.ai', 'api.fish.audio'}:
+            return httpx.Response(200, content=WAV)
         if host == 'texttospeech.googleapis.com':
             return httpx.Response(200, json={'audioContent': base64.b64encode(MP3).decode()})
         if host.endswith('speech.microsoft.com'):
@@ -128,6 +146,71 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('1008', str(caught.exception))
         self.assertNotIn('secret-token', str(caught.exception))
 
+    async def test_mimo_roles_format_and_audio(self):
+        result = await synthesize('mimo', '只朗读这句话', {'instructions': '平静、慢速'})
+        self.assertEqual(self.payload()['messages'], [
+            {'role': 'user', 'content': '平静、慢速'}, {'role': 'assistant', 'content': '只朗读这句话'}])
+        self.assertEqual(self.payload()['audio'], {'format': 'wav', 'voice': '冰糖'})
+        self.assertFalse(self.payload()['stream'])
+        self.assertEqual(str(self.requests[0].url), 'https://api.xiaomimimo.com/v1/chat/completions')
+        self.assertEqual(self.requests[0].headers['api-key'], ENV['MIMO_API_KEY'])
+        self.assertEqual(result.audio, WAV)
+
+    async def test_mimo_voice_design_omits_preset_voice(self):
+        await synthesize('mimo', '你好', {'model': 'mimo-v2.5-tts-voicedesign', 'instructions': '温柔的青年女声'})
+        self.assertNotIn('voice', self.payload()['audio'])
+        self.assertEqual(self.payload()['messages'][0]['content'], '温柔的青年女声')
+        await synthesize('mimo', '你好', {})
+        self.assertEqual(self.payload(1)['messages'], [{'role': 'assistant', 'content': '你好'}])
+
+    async def test_mimo_missing_invalid_and_truncated_audio_rejected(self):
+        for response in [{'error': {'message': 'private-secret'}}, {'choices': []},
+                         {'choices': [{'finish_reason': 'stop', 'message': {}}]},
+                         {'choices': [{'finish_reason': 'stop', 'message': {'audio': {'data': 'invalid!'}}}]},
+                         {'choices': [{'finish_reason': 'length', 'message': {'audio': {'data': base64.b64encode(WAV).decode()}}}]}]:
+            with self.subTest(response=response):
+                self.requests.clear()
+                self.response_override = lambda r, body=response: httpx.Response(200, json=body)
+                with self.assertRaises(ProviderError) as caught:
+                    await synthesize('mimo', '你好', {})
+                self.assertNotIn('private-secret', str(caught.exception))
+                self.assertEqual(len(self.requests), 1)
+
+    async def test_doubao_chunk_assembly_and_voice_controls(self):
+        result = await synthesize('doubao', 'hello', {'instructions': '自然、轻快', 'speech_rate': 20, 'loudness_rate': -10})
+        req = self.payload()['req_params']
+        self.assertEqual(req['text'], 'hello')
+        self.assertEqual(req['speaker'], 'zh_female_vv_uranus_bigtts')
+        self.assertEqual(req['audio_params'], {'format': 'mp3', 'sample_rate': 24000, 'speech_rate': 20, 'loudness_rate': -10})
+        self.assertEqual(json.loads(req['additions']), {'context_texts': ['自然、轻快']})
+        request = self.requests[0]
+        self.assertEqual(str(request.url), 'https://openspeech.bytedance.com/api/v3/tts/unidirectional')
+        self.assertEqual(request.headers['X-Api-Resource-Id'], 'seed-tts-2.0')
+        self.assertEqual(request.headers['X-Api-Key'], ENV['VOLCENGINE_TTS_API_KEY'])
+        self.assertTrue(request.headers['X-Api-Request-Id'])
+        self.assertEqual(result.audio, MP3)
+
+    async def test_doubao_existing_cloned_voice(self):
+        await synthesize('doubao', 'hello', {'resource_id': 'seed-icl-2.0', 'voice': 'S_existing_voice'})
+        self.assertEqual(self.requests[0].headers['X-Api-Resource-Id'], 'seed-icl-2.0')
+        self.assertEqual(self.payload()['req_params']['speaker'], 'S_existing_voice')
+        self.assertNotIn('additions', self.payload()['req_params'])
+
+    async def test_doubao_partial_error_and_invalid_streams_rejected(self):
+        audio = json.dumps({'code': 0, 'data': base64.b64encode(MP3).decode()})
+        terminal = json.dumps({'code': 20000000})
+        for response in [audio, terminal, audio + '\n' + json.dumps({'code': 45000000, 'message': 'private-secret'}),
+                         'not-json', '[]', json.dumps({'code': True}),
+                         json.dumps({'code': 0, 'data': 'bad!'}) + '\n' + terminal,
+                         audio + '\n' + terminal + '\n' + audio]:
+            with self.subTest(response=response):
+                self.requests.clear()
+                self.response_override = lambda r, body=response: httpx.Response(200, content=body)
+                with self.assertRaises(ProviderError) as caught:
+                    await synthesize('doubao', 'hello', {})
+                self.assertNotIn('private-secret', str(caught.exception))
+                self.assertEqual(len(self.requests), 1)
+
     async def test_elevenlabs_settings_optional(self):
         await synthesize('elevenlabs', 'hello', {'stability': .3})
         self.assertEqual(self.payload()['voice_settings']['stability'], .3)
@@ -135,6 +218,42 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests[0].url.params['output_format'], 'mp3_44100_128')
         await synthesize('elevenlabs', 'hello', {'use_voice_settings': False})
         self.assertNotIn('voice_settings', self.payload(1))
+
+    async def test_stepfun_official_payload_regions_and_audio(self):
+        result = await synthesize('stepfun', '重庆的银行', {'instructions': '轻快', 'speed': .8, 'volume': 1.2})
+        body = self.payload()
+        self.assertEqual(body['input'], '重庆的银行')
+        self.assertEqual(body['instruction'], '轻快')
+        self.assertEqual(body['model'], 'stepaudio-3-tts')
+        self.assertEqual(body['language'], 'zh')
+        self.assertEqual(body['response_format'], 'wav')
+        self.assertFalse(body['return_url'])
+        self.assertEqual(body['speed'], .8)
+        self.assertEqual(body['volume'], 1.2)
+        self.assertEqual(self.requests[0].url.host, 'api.stepfun.com')
+        self.assertEqual(self.requests[0].headers['Authorization'], 'Bearer ' + ENV['STEP_API_KEY'])
+        self.assertEqual(result.audio, WAV)
+        await synthesize('stepfun', 'hello', {'region': 'international', 'model': 'stepaudio-2.5-tts'})
+        self.assertEqual(self.requests[1].url.host, 'api.stepfun.ai')
+        self.assertNotIn('instruction', self.payload(1))
+
+    async def test_fish_header_selects_model_and_existing_voice(self):
+        result = await synthesize('fish', '你好', {'voice': 'my-existing-voice', 'model': 's2-pro', 'normalize': False})
+        self.assertEqual(str(self.requests[0].url), 'https://api.fish.audio/v1/tts')
+        self.assertEqual(self.requests[0].headers['model'], 's2-pro')
+        self.assertEqual(self.requests[0].headers['Authorization'], 'Bearer ' + ENV['FISH_AUDIO_API_KEY'])
+        self.assertEqual(self.payload(), {'text': '你好', 'reference_id': 'my-existing-voice', 'format': 'wav',
+                                         'temperature': .7, 'top_p': .7, 'normalize': False})
+        self.assertEqual(result.audio, WAV)
+
+    async def test_new_cloud_json_failures_never_become_audio_or_retry(self):
+        self.response_override = lambda r: httpx.Response(200, json={'message': 'private-secret'})
+        for provider, params in [('stepfun', {}), ('fish', {'voice': 'existing-voice'})]:
+            self.requests.clear()
+            with self.assertRaises(ProviderError) as caught:
+                await synthesize(provider, 'hello', params)
+            self.assertNotIn('private-secret', str(caught.exception))
+            self.assertEqual(len(self.requests), 1)
 
     async def test_azure_safe_ssml(self):
         text = '<voice name="evil"> & 你好'
@@ -195,7 +314,15 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
 class ValidationTests(unittest.TestCase):
     def test_defaults_for_all(self):
         for c in CATALOG:
-            self.assertEqual(set(validate_params(c['id'], {}, 'hello')), {f['key'] for f in c['fields']})
+            self.assertEqual(set(validate_params(c['id'], {})), {f['key'] for f in c['fields']})
+
+    def test_new_cloud_limits_and_model_fallback_prevention(self):
+        for provider, params, text in [('stepfun', {}, '中' * 1001),
+                 ('stepfun', {'instructions': 'a' * 501}, 'hello'),
+                 ('stepfun', {'model': 'stepaudio-2.5-tts', 'instructions': 'a' * 201}, 'hello'),
+                 ('fish', {}, 'hello'), ('fish', {'model': 'unknown', 'voice': 'voice'}, 'hello')]:
+            with self.subTest(provider=provider, params=params), self.assertRaises(ProviderError):
+                validate_params(provider, params, text)
 
     def test_unknown_range_and_boolean_rejected(self):
         for provider, params in [('demo', {'frequency': True}), ('demo', {'frequency': 9999}), ('demo', {'frequency': float('nan')}), ('demo', {'unknown': 1}), ('elevenlabs', {'speaker_boost': 1}), ('openai', {'format': 'invalid'}), ('minimax', {'pitch': 1.5}), ('openai', {'voice': ''})]:
@@ -206,6 +333,15 @@ class ValidationTests(unittest.TestCase):
         for provider, text in [('demo', ''), ('demo', 'a' * 2001), ('qwen', '中' * 601), ('google', '中' * 1800), ('azure', '\x00')]:
             with self.subTest(provider=provider), self.assertRaises(ProviderError):
                 validate_params(provider, {}, text)
+
+    def test_mimo_design_and_doubao_model_voice_compatibility(self):
+        for provider, params in [('mimo', {'model': 'mimo-v2.5-tts-voicedesign'}),
+                                 ('mimo', {'model': 'mimo-v2.5-tts-voiceclone'}),
+                                 ('doubao', {'resource_id': 'seed-icl-2.0'}),
+                                 ('doubao', {'resource_id': 'seed-icl-2.0', 'voice': 'S_example', 'instructions': '开心'}),
+                                 ('doubao', {'speech_rate': 1.5})]:
+            with self.subTest(provider=provider, params=params), self.assertRaises(ProviderError):
+                validate_params(provider, params, 'hello')
 
     def test_public_catalog_no_credentials_and_warning(self):
         with patch.dict(os.environ, ENV):

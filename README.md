@@ -31,6 +31,10 @@
 
 本地生成时文字留在电脑上，无需 API Key。每次最多 300 字。还可下载 Qwen3-TTS 或 CosyVoice；它们需要更多磁盘和内存，CPU 生成可能较慢。使用 NVIDIA GPU 需要兼容显卡与驱动。
 
+当前源码还支持 **IndexTTS-2**（CPU / NVIDIA GPU）和 **GLM-TTS**（需要 NVIDIA GPU）。在“模型配置”中下载安装，然后在“方案对比”中导入你有权使用的参考录音：3–10 秒、8–48 kHz、单声道或双声道、16-bit PCM WAV，不超过 2 MB。GLM 还需填写准确逐字稿。保存方案后可在“文本测试”中重复使用，录音和逐字稿保留在本机。
+
+IndexTTS 连同辅助模型约需 8 GB；GLM 权重约 9 GB，另需独立 Python 与推理环境。安装会校验下载文件，并使用官方样例试生成，通过才标为可用。IndexTTS 已在 Linux CPU 完成真实生成和应用 API 验证；GLM 完整权重及 GPU、Windows 原生推理尚未实测。
+
 ### 使用云端人声
 
 1. 打开“模型配置”，点击“编辑 API 凭证”，填入自己要使用的服务 Key 并保存。
@@ -38,9 +42,25 @@
 3. 在“方案对比”选择服务，填写账号支持的模型、音色等参数，保存方案。
 4. 在“文本测试”选择方案，输入文字，确认云端调用后生成。
 
-支持 OpenAI、Gemini、Qwen / DashScope、MiniMax、ElevenLabs、Azure、Google Cloud TTS 和 AWS Polly。只需配置想使用的服务；凭证文件里附有变量示例。服务显示“已检测到配置”后，仍需首次调用确认 Key、余额和模型权限。
+支持 OpenAI、Gemini、Qwen / DashScope、MiniMax、小米 MiMo、字节豆包 / Seed TTS、ElevenLabs、StepAudio、Fish Audio、Azure、Google Cloud TTS 和 AWS Polly。只需配置想使用的服务；凭证文件里附有变量示例。服务显示“已检测到配置”后，仍需首次调用确认 Key、余额和模型权限。
 
 云服务会收到你的文字和参数，**可能收费**。不要提交不适合外传的文本，也不要分享凭证文件。生成失败或超时后，先检查服务状态，再决定是否重试。
+
+### 新增语音服务与模型覆盖
+
+2026-11-13 补充的源码接入如下，既有发行包不包含尚未重新构建的源码更新。
+
+| 服务 / 模型 | 方式与配置 | 官方依据 |
+| --- | --- | --- |
+| 小米 MiMo | `MIMO_API_KEY`；MiMo-V2.5-TTS 预置音色和 VoiceDesign；VoiceDesign 需音色描述 | [官方接口](https://mimo.mi.com/docs/en-US/api/audio/tts-post) |
+| 字节豆包 / Seed TTS | `VOLCENGINE_TTS_API_KEY`；使用豆包语音新版控制台 Key；TTS 2.0 和已有 ICL 2.0 音色 | [官方接口](https://www.volcengine.com/docs/6561/1598757) |
+| StepAudio | `STEP_API_KEY`；3 / 2.5；地域应与 Key 一致；括号中的内容作为指令，不朗读 | [官方接口](https://platform.stepfun.ai/docs/en/api-reference/audio/create-audio) |
+| Fish Audio / Fish Speech 托管 API | `FISH_AUDIO_API_KEY` 和已有声音模型 ID；本次接入官方云 API，未接入本地 Fish Speech 权重 | [官方接口](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech) |
+| GLM-TTS | 本地 NVIDIA GPU；参考录音和逐字稿 | [官方仓库](https://github.com/zai-org/GLM-TTS) |
+| IndexTTS-2 | 本地 CPU / GPU；参考录音；不混用 2.5 权重 | [官方仓库](https://github.com/index-tts/index-tts) |
+| DeepSeek | 本次未在公开开发文档找到可直接接入的官方 TTS API，暂不列为可选语音引擎；应用内朗读和第三方插件另行核对 | [官方开发文档](https://api-docs.deepseek.com/zh-cn/) |
+
+已有凭证文件不会被升级覆盖，需要时手动追加对应变量并重启。参考录音保存在 `models/references/`；参数记录录音 ID 与 SHA256，导出 ZIP 不包含原始参考音频。更详细的接口限制与验证边界见 `api_contracts.md` 和 `VERIFICATION.json`。
 
 ## 比较多个方案
 

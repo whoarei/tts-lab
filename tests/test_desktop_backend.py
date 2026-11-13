@@ -44,6 +44,26 @@ class ConfigurationTests(unittest.TestCase):
             self.assertNotIn("AWS_SHARED_CREDENTIALS_FILE", os.environ)
             self.assertEqual(os.environ["AWS_EC2_METADATA_DISABLED"], "true")
 
+    def test_new_tts_keys_only_load_from_explicit_desktop_config(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
+            'MIMO_API_KEY': 'inherited-mimo', 'VOLCENGINE_TTS_API_KEY': 'inherited-volc',
+            'STEP_API_KEY': 'inherited-step', 'FISH_AUDIO_API_KEY': 'inherited-fish',
+            'TTS_LAB_DESKTOP_TOKEN': 't' * 40, 'TTS_LAB_DATA_DIR': folder,
+        }):
+            config = Path(folder) / 'credentials.env'
+            config.write_text('', encoding='utf-8')
+            launcher.configure(True, config)
+            self.assertNotIn('MIMO_API_KEY', os.environ)
+            self.assertNotIn('VOLCENGINE_TTS_API_KEY', os.environ)
+            self.assertNotIn('STEP_API_KEY', os.environ)
+            self.assertNotIn('FISH_AUDIO_API_KEY', os.environ)
+            config.write_text('MIMO_API_KEY=explicit-mimo\nVOLCENGINE_TTS_API_KEY=explicit-volc\nSTEP_API_KEY=explicit-step\nFISH_AUDIO_API_KEY=explicit-fish\n', encoding='utf-8')
+            launcher.configure(True, config)
+            self.assertEqual(os.environ['MIMO_API_KEY'], 'explicit-mimo')
+            self.assertEqual(os.environ['VOLCENGINE_TTS_API_KEY'], 'explicit-volc')
+            self.assertEqual(os.environ['STEP_API_KEY'], 'explicit-step')
+            self.assertEqual(os.environ['FISH_AUDIO_API_KEY'], 'explicit-fish')
+
     def test_bundled_polly_requires_explicit_config_for_desktop(self):
         from tts_lab.catalog import public_catalog
         with patch.dict(os.environ, {"TTS_LAB_DESKTOP": "1", "AWS_PROFILE": "",

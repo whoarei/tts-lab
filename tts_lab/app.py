@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .catalog import public_catalog, validate_params
 from .providers import ProviderError, synthesize
-from . import local_models
+from . import local_models, reference_audio
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("TTS_LAB_DATA_DIR", ROOT.parent / "data")).resolve()
@@ -81,7 +81,8 @@ async def local_guard(request: Request, call_next):
             if not secrets.compare_digest(request.headers.get("x-local-token", ""), TOKEN):
                 return JSONResponse({"detail": "会话已变更，请刷新页面。"}, status_code=403)
             length = request.headers.get("content-length", "0")
-            if int(length) > 100_000:
+            maximum = reference_audio.MAX_REFERENCE if request.method == 'POST' and request.url.path == '/api/references' else 100_000
+            if int(length) > maximum:
                 return JSONResponse({"detail": "请求过大。"}, status_code=413)
     except (ValueError, TypeError):
         return JSONResponse({"detail": "请求头无效。"}, status_code=400)
@@ -197,7 +198,29 @@ async def generate(run: dict):
 
 @app.get("/api/state")
 def state():
-    return {"token": TOKEN, "providers": public_catalog(), "version": "0.4.1", "desktop": DESKTOP}
+    return {"token": TOKEN, "providers": public_catalog(), "references": reference_audio.list_references(), "version": "0.4.1", "desktop": DESKTOP}
+
+
+@app.post('/api/references', status_code=201)
+async def import_reference(request: Request, name: str = '参考录音.wav'):
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > reference_audio.MAX_REFERENCE:
+            raise HTTPException(413, '参考录音超过 2 MB。')
+    try:
+        return reference_audio.save(bytes(raw), name)
+    except reference_audio.ReferenceError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
+@app.get('/api/references/{reference_id}/audio')
+def reference_preview(reference_id: str):
+    try:
+        reference_audio.info(reference_id)
+        return FileResponse(reference_audio.path_for(reference_id), media_type='audio/wav')
+    except reference_audio.ReferenceError as exc:
+        raise HTTPException(404, str(exc)) from None
 
 
 class SavedVariant(Variant):
@@ -270,6 +293,8 @@ async def create_batch(batch: Batch):
             params = validate_params(variant.provider, variant.params, text)
             if item['family'] == 'local' and params['model'] not in item['installed_models']:
                 raise ProviderError('所选本地模型尚未安装，请在“本地模型配置”中下载。')
+            if 'reference_id' in params:
+                reference_audio.info(params['reference_id'])
         except (ValueError, ProviderError) as exc:
             raise HTTPException(422, str(exc)) from None
         validated.append((variant.provider, item, params))

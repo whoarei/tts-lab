@@ -9,6 +9,7 @@ import os
 import re
 import struct
 import time
+import uuid
 import wave
 from dataclasses import dataclass
 from urllib.parse import urlsplit, quote
@@ -73,12 +74,30 @@ def validate_params(provider_id: str, params: dict, text: str | None = None) -> 
             raise ProviderError('文本包含不支持的控制字符。')
         if provider_id == 'qwen' and len(text) > 600:
             raise ProviderError('Qwen HTTP 接口最多允许 600 字。')
+        if provider_id == 'stepfun' and len(text) > 1000:
+            raise ProviderError('StepAudio 单次最多允许 1000 字。')
+        if provider_id == 'fish' and not clean['voice']:
+            raise ProviderError('请填写 Fish Audio 声音模型 ID。')
+        if provider_id in {'local_indextts', 'local_glmtts'}:
+            if not re.fullmatch(r'[0-9a-f]{32}', clean['reference_id']):
+                raise ProviderError('请先导入并选择参考录音。')
+            if provider_id == 'local_glmtts' and not clean['reference_text']:
+                raise ProviderError('GLM-TTS 需要填写参考录音的准确逐字稿。')
         if provider_id == 'google' and len(text.encode('utf-8')) > 5000:
             raise ProviderError('Google Cloud TTS 文本最多允许 5000 UTF-8 字节。')
         if provider_id.startswith('local_') and len(text) > 300:
             raise ProviderError('本地模型单次最多允许 300 字，请缩短文本后生成。')
     if provider_id == 'openai' and clean['instructions'] and not clean['model'].startswith('gpt-4o-mini-tts'):
         raise ProviderError('当前适配器仅对 gpt-4o-mini-tts 模型发送风格指令。')
+    if provider_id == 'mimo' and clean['model'] == 'mimo-v2.5-tts-voicedesign' and not clean['instructions']:
+        raise ProviderError('MiMo VoiceDesign 需要填写音色描述。')
+    if provider_id == 'stepfun' and len(clean['instructions']) > (500 if clean['model'] == 'stepaudio-3-tts' else 200):
+        raise ProviderError('StepAudio 3 风格指令最多 500 字，2.5 最多 200 字。')
+    if provider_id == 'doubao' and clean['resource_id'] == 'seed-icl-2.0':
+        if clean['voice'] == 'zh_female_vv_uranus_bigtts':
+            raise ProviderError('豆包 ICL 2.0 需要填写你在火山控制台已有的复刻音色 ID。')
+        if clean['instructions']:
+            raise ProviderError('当前豆包适配器仅对 TTS 2.0 发送语音风格指令。')
     if provider_id == 'local_qwen3' and clean['model'] == 'qwen3-0.6b' and clean['instructions']:
         raise ProviderError('Qwen3-TTS 0.6B 不支持风格指令，请留空或选择 1.7B 模型。')
     return clean
@@ -164,6 +183,37 @@ def _id(value):
     return value
 
 
+def _doubao_audio(raw):
+    """Decode JSON lines independently of HTTP chunk boundaries; reject truncation."""
+    chunks, size, finished = [], 0, False
+    try:
+        lines = raw.decode('utf-8').splitlines()
+        for line in lines:
+            if not line.strip():
+                continue
+            data = json.loads(line)
+            if not isinstance(data, dict) or finished:
+                raise ValueError()
+            code = data.get('code')
+            if type(code) is not int:
+                raise ValueError()
+            if code == 20000000:
+                finished = True
+            elif code != 0:
+                raise ProviderError(f'豆包返回失败状态 {code}；请检查资源 ID、音色、余额与权限。')
+            if data.get('data'):
+                chunk = _b64(data['data'])
+                size += len(chunk)
+                if size > MAX_AUDIO:
+                    raise ProviderError('豆包音频超过 20 MB。')
+                chunks.append(chunk)
+    except (ValueError, UnicodeError):
+        raise ProviderError('豆包返回了无效的 JSON 音频分段。') from None
+    if not finished:
+        raise ProviderError('豆包未返回合成结束标记，音频可能不完整；没有自动重试。')
+    return _audio(b''.join(chunks))
+
+
 async def synthesize(provider_id: str, text: str, params: dict) -> AudioResult:
     p = validate_params(provider_id, params, text)
     start = time.perf_counter()
@@ -180,6 +230,9 @@ async def synthesize(provider_id: str, text: str, params: dict) -> AudioResult:
             except LocalModelError as exc:
                 raise ProviderError(str(exc)) from None
             result = _audio(audio, {'is_local': True, 'model': p['model']})
+            if p.get('reference_id'):
+                from .reference_audio import info
+                result.metadata['reference_sha256'] = info(p['reference_id'])['sha256']
         elif provider_id == 'polly':
             result = await asyncio.to_thread(_polly, text, p)
         else:
@@ -251,11 +304,49 @@ async def _dispatch(c, provider, text, p):
             code = str(status) if isinstance(status, int) else 'unknown'
             raise ProviderError('MiniMax 返回失败状态 ' + code + '；请检查模型、音色、余额与权限。')
         return _audio(bytes.fromhex(data['data']['audio']))
+    if provider == 'mimo':
+        messages = []
+        if p['instructions']:
+            messages.append({'role': 'user', 'content': p['instructions']})
+        messages.append({'role': 'assistant', 'content': text})
+        audio = {'format': p['format']}
+        if p['model'] == 'mimo-v2.5-tts':
+            audio['voice'] = p['voice']
+        body = {'model': p['model'], 'messages': messages, 'audio': audio, 'stream': False}
+        data = await _json(c, 'https://api.xiaomimimo.com/v1/chat/completions', {'api-key': _env('MIMO_API_KEY')}, body)
+        choices = data.get('choices')
+        if not isinstance(choices, list) or not choices or choices[0].get('finish_reason') != 'stop':
+            raise ProviderError('MiMo 未正常完成语音合成；请检查模型权限、长度或内容限制。')
+        return _audio(_b64(choices[0].get('message', {}).get('audio', {}).get('data')))
+    if provider == 'doubao':
+        req = {'text': text, 'speaker': p['voice'], 'audio_params': {
+            'format': 'mp3', 'sample_rate': int(p['sample_rate']),
+            'speech_rate': int(p['speech_rate']), 'loudness_rate': int(p['loudness_rate'])}}
+        if p['instructions']:
+            req['additions'] = json.dumps({'context_texts': [p['instructions']]}, ensure_ascii=False)
+        headers = {'X-Api-Key': _env('VOLCENGINE_TTS_API_KEY'),
+                   'X-Api-Resource-Id': p['resource_id'], 'X-Api-Request-Id': str(uuid.uuid4())}
+        raw = await _request(c, 'POST', 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+                             headers=headers, json={'req_params': req})
+        return _doubao_audio(raw)
     if provider == 'elevenlabs':
         body = {'text': text, 'model_id': p['model'], 'voice_settings': {'stability': p['stability'], 'similarity_boost': p['similarity_boost'], 'style': p['style'], 'use_speaker_boost': p['speaker_boost'], 'speed': p['speed']}}
         if not p['use_voice_settings']:
             body.pop('voice_settings')
         return _audio(await _request(c, 'POST', 'https://api.elevenlabs.io/v1/text-to-speech/' + _id(p['voice']), params={'output_format': 'mp3_44100_128'}, headers={'xi-api-key': _env('ELEVENLABS_API_KEY')}, json=body))
+    if provider == 'stepfun':
+        body = {'model': p['model'], 'input': text, 'voice': p['voice'], 'language': p['language'],
+                'response_format': p['format'], 'speed': p['speed'], 'volume': p['volume'], 'return_url': False}
+        if p['instructions']:
+            body['instruction'] = p['instructions']
+        host = 'api.stepfun.com' if p['region'] == 'china' else 'api.stepfun.ai'
+        return _audio(await _request(c, 'POST', f'https://{host}/v1/audio/speech',
+                                    headers={'Authorization': 'Bearer ' + _env('STEP_API_KEY')}, json=body))
+    if provider == 'fish':
+        body = {'text': text, 'reference_id': p['voice'], 'format': p['format'],
+                'temperature': p['temperature'], 'top_p': p['top_p'], 'normalize': p['normalize']}
+        return _audio(await _request(c, 'POST', 'https://api.fish.audio/v1/tts',
+                                    headers={'Authorization': 'Bearer ' + _env('FISH_AUDIO_API_KEY'), 'model': p['model']}, json=body))
     if provider == 'azure':
         region = _env('AZURE_SPEECH_REGION')
         if not re.fullmatch(r'[a-z0-9-]{2,40}', region):
