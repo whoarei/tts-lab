@@ -62,12 +62,13 @@ test('native API URLs stay within the private protocol and reject path escapes',
 
 test('bridge invokes only the fixed desktop control contract', async () => {
   const h = harness(), bridge = h.window.ttsDesktop;
-  for (const name of ['minimize', 'toggleMaximize', 'close', 'getWindowState', 'editCredentials', 'restart', 'openDataDirectory']) {
+  for (const name of ['minimize', 'toggleMaximize', 'close', 'getWindowState', 'restart', 'openDataDirectory']) {
     await bridge[name]();
     assert.equal(h.calls.at(-1).command, 'desktop_action');
     assert.equal(h.calls.at(-1).args.action, name);
   }
   assert.equal(bridge.invoke, undefined);
+  assert.equal(bridge.editCredentials, undefined);
 });
 
 test('window state listeners sanitize payloads and dispose even before registration completes', async () => {

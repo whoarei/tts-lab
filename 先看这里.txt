@@ -46,17 +46,18 @@ Qwen3-TTS 和 CosyVoice 需要更多空间与内存，CPU 生成可能较慢。
 录音保存在本机。IndexTTS 已在 Linux CPU 实测生成；GLM 完整 GPU 推理尚未实测。
 
 云服务
-1. 打开“模型配置”，点击“编辑 API 凭证”，填写自己的服务 Key 并保存。
-2. 点击“重启并载入凭证”。
+1. 打开“模型配置”，点击云服务卡片，在弹窗中填写 Key 等配置。
+2. 点击“保存配置”，立即生效，无需重启。Key 默认隐藏，输入时可用小眼睛确认。
+   保存后只显示“已配置”，再次打开时留空保留，填写新值替换；取消不保存。
 3. 在“方案对比”选择服务和账号支持的模型、音色，命名并保存方案。
 4. 在“文本测试”选择方案，输入文字，确认云端调用后生成。
-0.8.0 新增 DeepSeek 官方独立 TTS：在原有 credentials.env 中手动追加
-DEEPSEEK_API_KEY，保存后重启，再选择 Stella（默认女声）或 Tide（男声）。
+0.8.0 新增 DeepSeek 官方独立 TTS：点击 DeepSeek 卡片配置 API Key，
+保存后选择 Stella（默认女声）或 Tide（男声）。
 可开关 Markdown 过滤，无需模型名，不提供语速或风格指令；每次最多 2000 字。
 输出为 24 kHz 单声道 PCM16 WAV，不上传参考录音。真实账号调用与音质尚未验证。
 原有凭证文件不会被升级覆盖；显示已配置不代表账号额度和权限已确认。
 同时支持小米 MiMo、字节豆包 / Seed TTS、StepAudio 和 Fish Audio 官方云接口。
-已有凭证文件可手动追加 MIMO_API_KEY、VOLCENGINE_TTS_API_KEY、STEP_API_KEY、FISH_AUDIO_API_KEY。
+在对应服务卡片中填写 Key 并保存即可；Azure、Google 与 AWS 还会显示所需的地域、项目或认证方式。
 Fish 还需要声音模型 ID；本次未提供 Fish Speech 本地权重。
 云端调用会发送文字和参数，可能收费。显示已配置不等于 Key、余额和权限已验证。
 不要分享凭证，不要提交不适合外传的文本。HTTP 错误或超时不会自动重试，请先核对服务状态再决定是否重试。
@@ -72,7 +73,7 @@ Fish 还需要声音模型 ID；本次未提供 Fish Speech 本地权重。
 方案：%LOCALAPPDATA%\TTS Lab\data\variants.json
 历史、音频与评分：%LOCALAPPDATA%\TTS Lab\data
 本地模型：%LOCALAPPDATA%\TTS Lab\models
-凭证以明文保存在本机，界面不会显示 Key。备份时请妥善保管。
+凭证以明文保存在本机，已保存的 Key 不会回显；小眼睛仅显示本次输入。备份时请妥善保管。
 
 升级前先退出应用。安装版可安装新版；便携版解压到新文件夹再打开。
 升级、卸载安装版或移除便携程序目录，都会保留个人配置、模型和历史。

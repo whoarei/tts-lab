@@ -112,7 +112,11 @@ with sync_playwright() as p:
     assert page.locator('#app-update-auto').is_checked()
     assert '尚未检查' in page.locator('#app-update-status').inner_text()
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'check_update')")
-    page.click('#edit-credentials')
+    page.click('[data-provider=deepseek]')
+    page.wait_for_selector('#credential-DEEPSEEK_API_KEY')
+    assert page.locator('#credential-DEEPSEEK_API_KEY').input_value() == ''
+    assert page.locator('#credential-DEEPSEEK_API_KEY').get_attribute('type') == 'password'
+    page.click('#credential-cancel')
     page.click('#open-data-directory')
     page.click('[data-page=compare]')
     first = page.locator('.variant').first
@@ -227,7 +231,7 @@ with sync_playwright() as p:
     assert page.locator('#test-generate').is_disabled() and page.locator('#compare-generate').is_disabled()
     assert page.locator('#test-variant').is_disabled() and page.locator('#add-variant').is_disabled()
     assert page.locator('#save-variants').is_disabled() and page.locator('#local-device').is_disabled()
-    assert page.locator('#edit-credentials').is_disabled() and page.locator('#restart-app').is_disabled()
+    assert page.locator('#cloud-services button:enabled').count() == 0
     assert page.locator('.variant input:enabled, .variant select:enabled, .variant button:enabled').count() == 0
     assert page.locator('#local-model-list button:enabled').count() == 0
     writes_before_install = len([request for request in requests if request[0] in {'POST', 'PUT', 'DELETE'}])

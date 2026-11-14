@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .catalog import public_catalog, validate_params
 from .providers import ProviderError, synthesize
-from . import local_models, reference_audio
+from . import credentials, local_models, reference_audio
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("TTS_LAB_DATA_DIR", ROOT.parent / "data")).resolve()
@@ -208,6 +208,32 @@ def activity():
                sum(not task.done() for task in list(TASKS)))
     installs = sum(not task.done() for task in list(local_models.TASKS.values()))
     return {'busy': bool(runs or installs), 'active_runs': runs, 'active_installs': installs}
+
+
+@app.get('/api/credentials/{provider}')
+async def credential_settings(provider: str):
+    try:
+        return credentials.describe(provider)
+    except credentials.CredentialError as exc:
+        raise HTTPException(404, str(exc)) from None
+
+
+@app.put('/api/credentials/{provider}')
+async def save_credentials(provider: str, request: Request):
+    # Parse manually: Pydantic's input errors may echo submitted secrets.
+    try:
+        body = await request.json()
+    except (ValueError, UnicodeError):
+        raise HTTPException(422, '配置内容无效。') from None
+    # No await between this gate and publishing the new environment. Queued
+    # batches also count, so running requests never change credentials mid-run.
+    if activity()['busy']:
+        raise HTTPException(409, '请等待语音生成和模型安装完成后再保存凭证。')
+    try:
+        settings = credentials.save(provider, body, desktop=DESKTOP)
+    except credentials.CredentialError as exc:
+        raise HTTPException(422, str(exc)) from None
+    return {'settings': settings, 'providers': public_catalog()}
 
 
 @app.post('/api/references', status_code=201)

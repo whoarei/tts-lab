@@ -410,7 +410,8 @@ def _polly(text, p):
     except ImportError:
         raise ProviderError('请先安装可选 boto3 依赖。') from None
     region = _id(p['region'])
-    client = boto3.client('polly', region_name=region, config=Config(connect_timeout=15, read_timeout=120, retries={'total_max_attempts': 1}))
+    # A new session observes settings saved in-app instead of cached credentials.
+    client = boto3.Session().client('polly', region_name=region, config=Config(connect_timeout=15, read_timeout=120, retries={'total_max_attempts': 1}))
     try:
         response = client.synthesize_speech(Text=text, TextType='text', OutputFormat='mp3', VoiceId=p['voice'], Engine=p['engine'], SampleRate=p['sample_rate'])
         stream = response['AudioStream']

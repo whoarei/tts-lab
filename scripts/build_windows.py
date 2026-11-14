@@ -87,7 +87,7 @@ def install_wheel(wheel, site):
 
 
 BACKEND_FILES = (
-    '__init__.py', 'app.py', 'catalog.py', 'providers.py', 'local_models.py', 'local_worker.py', 'reference_audio.py',
+    '__init__.py', 'app.py', 'catalog.py', 'credentials.py', 'providers.py', 'local_models.py', 'local_worker.py', 'reference_audio.py',
     'static/app.js', 'static/desktop.js', 'static/index.html', 'static/style.css',
 )
 

@@ -9,16 +9,8 @@ import sys
 import threading
 
 import uvicorn
-
-PROVIDER_ENV = {
-    "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "GEMINI_API_KEY", "DASHSCOPE_API_KEY", "MINIMAX_API_KEY",
-    "MIMO_API_KEY", "VOLCENGINE_TTS_API_KEY",
-    "STEP_API_KEY", "FISH_AUDIO_API_KEY",
-    "ELEVENLABS_API_KEY", "AZURE_SPEECH_KEY", "AZURE_SPEECH_REGION",
-    "GOOGLE_CLOUD_ACCESS_TOKEN", "GOOGLE_CLOUD_PROJECT", "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_DEFAULT_REGION", "AWS_REGION",
-    "AWS_PROFILE",
-}
+from tts_lab import credentials
+from tts_lab.credentials import PROVIDER_ENV
 
 
 def configure(desktop: bool, config: Path | None) -> None:
@@ -42,11 +34,9 @@ def configure(desktop: bool, config: Path | None) -> None:
         from dotenv import dotenv_values
         values = dotenv_values(config, encoding="utf-8-sig", interpolate=False)
         for key, value in values.items():
-            if key in PROVIDER_ENV and value is not None:
+            if key in PROVIDER_ENV and value is not None and value.strip():
                 os.environ[key] = value
-        if (values.get("AWS_PROFILE") or "").strip():
-            os.environ.pop("AWS_CONFIG_FILE", None)
-            os.environ.pop("AWS_SHARED_CREDENTIALS_FILE", None)
+        credentials.aws_policy(True)
     else:
         try:
             from dotenv import load_dotenv
@@ -54,7 +44,8 @@ def configure(desktop: bool, config: Path | None) -> None:
             if config is not None:
                 raise ValueError("An explicit config requires python-dotenv.") from None
         else:
-            load_dotenv(config or Path(__file__).with_name(".env"))
+            load_dotenv(config or Path(__file__).with_name(".env"), interpolate=False)
+    credentials.CONFIG_PATH = (config or Path(__file__).with_name('.env')).resolve()
 
 
 class DesktopServer(uvicorn.Server):

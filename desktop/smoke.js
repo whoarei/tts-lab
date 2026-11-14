@@ -72,6 +72,23 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     document.querySelector('[data-page=models]').click();
     await wait(() => document.querySelectorAll('.model-card').length === 6, 'Model page failed');
+    document.querySelector('[data-provider=deepseek]').click();
+    await wait(() => document.querySelector('#credential-DEEPSEEK_API_KEY'), 'Credential dialog failed');
+    let credential = document.querySelector('#credential-DEEPSEEK_API_KEY');
+    assert(credential.type === 'password' && credential.value === '', 'Credential input must be blank and masked');
+    credential.value = 'native-smoke-synthetic-key';
+    document.querySelector('.credential-eye').click();
+    assert(credential.type === 'text', 'New input visibility toggle failed');
+    document.querySelector('#credential-save').click();
+    await wait(() => !document.querySelector('#credential-dialog').open, 'Native credential save failed');
+    const savedView = await (await api('/api/credentials/deepseek')).text();
+    assert(!savedView.includes('native-smoke-synthetic-key') && JSON.parse(savedView).fields[0].configured, 'Stored credential leaked or save did not apply');
+    document.querySelector('[data-provider=deepseek]').click();
+    await wait(() => document.querySelector('#credential-DEEPSEEK_API_KEY'), 'Credential reopen failed');
+    credential = document.querySelector('#credential-DEEPSEEK_API_KEY');
+    assert(credential.value === '' && credential.type === 'password', 'Stored key must never populate the dialog');
+    document.querySelector('#credential-cancel').click();
+    checks.push('native credential dialog save, input visibility and no secret readback');
     const updateState = await invoke('get_update_state');
     assert(updateState.current_version === state.version && ['installed', 'portable'].includes(updateState.distribution), 'Native update state mismatch');
     assert(window.__TTS_UPDATES_AUTO__ === false, 'Offline native smoke must not auto-check public updates');
