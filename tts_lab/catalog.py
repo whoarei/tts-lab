@@ -150,6 +150,8 @@ def public_catalog():
     result = copy.deepcopy(CATALOG)
     for provider in result:
         missing = [key for key in provider['env'] if not os.environ.get(key, '').strip()]
+        if provider['family'] not in {'local', 'demo'}:
+            provider['credentials_configured'] = not missing
         if provider['family'] == 'local':
             installed = [m['id'] for m in local if m['engine'] == provider['id'].removeprefix('local_') and m['ready']]
             provider['installed_models'] = installed
@@ -159,12 +161,13 @@ def public_catalog():
             else:
                 missing.append('本地模型配置 → 下载并安装')
         if provider['id'] == 'polly':
+            profile = os.getenv('AWS_PROFILE', '').strip()
+            direct = all(os.getenv(key, '').strip() for key in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'))
+            provider['credentials_configured'] = bool(profile or direct)
             if importlib.util.find_spec('boto3') is None:
                 missing.append('optional dependency: boto3')
             if os.getenv('TTS_LAB_DESKTOP') == '1':
                 provider['description'] = '桌面版已内置 boto3；请在凭证配置中明确选择 AWS_PROFILE 或已有 AWS 凭证。检测到配置不代表账号和地域权限已验证。'
-                profile = os.getenv('AWS_PROFILE', '').strip()
-                direct = all(os.getenv(key, '').strip() for key in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'))
                 if not profile and not direct:
                     missing.append('AWS_PROFILE 或 AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY')
         provider['missing_env'] = missing

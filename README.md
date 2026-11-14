@@ -51,14 +51,14 @@ IndexTTS 连同辅助模型约需 8 GB；GLM 权重约 9 GB，另需独立 Pytho
 
 ### 使用云端人声
 
-1. 打开“模型配置”，点击“编辑 API 凭证”，填入自己要使用的服务 Key 并保存。
-2. 点击“重启并载入凭证”。
+1. 打开“模型配置”，点击要使用的云服务卡片，在弹窗中填写 API Key 等配置。
+2. 点击“保存配置”，无需重启即可生效。Key 默认隐藏，输入时可点击小眼睛确认；保存后只显示“已配置”，再次打开时留空保留原 Key，输入新值替换。取消或按 Esc 不保存。
 3. 在“方案对比”选择服务，填写账号支持的模型、音色等参数，保存方案。
 4. 在“文本测试”选择方案，输入文字，确认云端调用后生成。
 
-支持 OpenAI、DeepSeek、Gemini、Qwen / DashScope、MiniMax、小米 MiMo、字节豆包 / Seed TTS、ElevenLabs、StepAudio、Fish Audio、Azure、Google Cloud TTS 和 AWS Polly。只需配置想使用的服务；凭证文件里附有变量示例。服务显示“已检测到配置”后，仍需首次调用确认 Key、余额和模型权限。
+支持 OpenAI、DeepSeek、Gemini、Qwen / DashScope、MiniMax、小米 MiMo、字节豆包 / Seed TTS、ElevenLabs、StepAudio、Fish Audio、Azure、Google Cloud TTS 和 AWS Polly。只需配置想使用的服务，Azure 会显示地域、Google 会显示项目 ID，AWS 可选择本机 Profile 或 Access Key。配置弹窗不会发起语音请求；生成或模型安装期间须等待任务结束再保存。服务显示“已配置”后，仍需首次调用确认 Key、余额和模型权限。
 
-DeepSeek 使用独立的官方语音接口：填写 `DEEPSEEK_API_KEY`，重启后选择 Stella（默认女声）或 Tide（男声），可开关 Markdown 过滤。无需填写聊天模型名，不提供语速或风格指令。应用固定接收 24 kHz、单声道、16-bit PCM 并保存为 WAV，不上传参考录音。官方说明支持普通话、粤语、英语、日语、韩语、马来语、阿拉伯语、印尼语、泰语和越南语，自动识别语言；本应用仍限制每次最多 2000 字。
+DeepSeek 使用独立的官方语音接口：在 DeepSeek 卡片中保存 API Key 后选择 Stella（默认女声）或 Tide（男声），可开关 Markdown 过滤。无需填写聊天模型名，不提供语速或风格指令。应用固定接收 24 kHz、单声道、16-bit PCM 并保存为 WAV，不上传参考录音。官方说明支持普通话、粤语、英语、日语、韩语、马来语、阿拉伯语、印尼语、泰语和越南语，自动识别语言；本应用仍限制每次最多 2000 字。
 
 云服务会收到你的文字和参数，**可能收费**。不要提交不适合外传的文本，也不要分享凭证文件。生成失败或超时后，先检查服务状态，再决定是否重试。
 
@@ -76,7 +76,7 @@ DeepSeek 使用独立的官方语音接口：填写 `DEEPSEEK_API_KEY`，重启�
 | IndexTTS-2 | 本地 CPU / GPU；参考录音；不混用 2.5 权重 | [官方仓库](https://github.com/index-tts/index-tts) |
 | DeepSeek | `DEEPSEEK_API_KEY`；独立 TTS API；Stella / Tide，Markdown 过滤；本应用固定 PCM 转 WAV，无需模型名，不支持调速、风格指令或参考音频 | [官方 TTS 文档](https://api-docs.deepseek.com/guides/tts/) |
 
-已有凭证文件不会被升级覆盖；使用 DeepSeek 时，请手动追加 `DEEPSEEK_API_KEY` 并重启。官方接口上限为 10,000 计费字符与 64 KiB 请求体（中文字符按 2、其他字符按 1 计费），本应用沿用更小的 2000 字限制。HTTP 错误或超时不会自动重试，避免意外重复调用。
+已有凭证文件不会被升级覆盖；使用 DeepSeek 时，点击对应服务卡片填写 API Key 并保存即可。官方接口上限为 10,000 计费字符与 64 KiB 请求体（中文字符按 2、其他字符按 1 计费），本应用沿用更小的 2000 字限制。HTTP 错误或超时不会自动重试，避免意外重复调用。
 
 本地模型的参考录音保存在 `models/references/`；参数记录录音 ID 与 SHA256，导出 ZIP 不包含原始参考音频。更详细的接口限制与验证边界见 `api_contracts.md` 和 `VERIFICATION.json`。
 
@@ -101,12 +101,12 @@ DeepSeek 使用独立的官方语音接口：填写 `DEEPSEEK_API_KEY`，重启�
 | 历史、音频与评分 | `%LOCALAPPDATA%\TTS Lab\data` |
 | 本地模型与运行环境 | `%LOCALAPPDATA%\TTS Lab\models` |
 
-凭证以本机明文文件保存，界面不会显示 Key。需要备份时可复制上述目录，请自行妥善保管。删除模型会保留历史音频。
+凭证以本机明文文件保存，界面不会读取已保存的 Key；小眼睛仅切换本次输入的可见性。需要备份时可复制上述目录，请自行妥善保管。删除模型会保留历史音频。
 
 ## 常见问题
 
 - **只听到“嘟”声？** 当前选的是离线测试音。下载本地模型或配置云服务，再保存并选择对应方案。
-- **服务或模型不可用？** 查看“模型配置”的状态。本地模型须完成安装；云服务须填写凭证并重启，模型和音色也须在账号权限范围内。
+- **服务或模型不可用？** 查看“模型配置”的状态。本地模型须完成安装；云服务须点击服务卡片保存凭证，模型和音色也须在账号权限范围内。
 - **没有生成完成就退出了？** 关闭应用会停止本机等待，云端已收到的请求仍可能完成并计费；重新打开后先查看历史。
 - **Windows 提示安全限制？** 应用目前未做代码签名，请遵循系统或组织的安全要求。Windows 原生安装与运行情况见验证说明。
 - **Tauri 便携版打不开？** 先确认已安装 Microsoft Edge WebView2 Runtime，并完整解压全部文件。Tauri 版复用系统浏览器运行时，未在便携包中附带完整浏览器。
@@ -123,7 +123,7 @@ python -m pip install -r requirements.txt
 python run.py
 ```
 
-打开 [http://127.0.0.1:8765](http://127.0.0.1:8765)，停止时在终端按 `Ctrl+C`。源码模式配置云服务时，把 `.env.example` 复制为 `.env`，填写后重启；数据与模型默认保存在项目内的 `data/` 和 `models/`。
+打开 [http://127.0.0.1:8765](http://127.0.0.1:8765)，停止时在终端按 `Ctrl+C`。源码模式同样可点击服务卡片配置，保存到项目根目录 `.env`（显式 `--config` 时保存到该文件），立即生效；也可手动编辑 `.env` 后重启。数据与模型默认保存在项目内的 `data/` 和 `models/`。
 
 运行 Tauri 桌面窗口还需要 Node.js 22+、Rust 工具链和系统 WebView 开发依赖；Windows 需要 MSVC C++ 构建工具和 WebView2。完成上述 Python 环境安装后执行：
 

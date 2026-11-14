@@ -377,12 +377,15 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         client = MagicMock()
         client.synthesize_speech.return_value = {'AudioStream': stream}
         boto = types.ModuleType('boto3')
-        boto.client = MagicMock(return_value=client)
+        session = MagicMock()
+        session.client.return_value = client
+        boto.Session = MagicMock(return_value=session)
         config_module = types.ModuleType('botocore.config')
         config_module.Config = MagicMock()
         with patch.dict(sys.modules, {'boto3': boto, 'botocore': types.ModuleType('botocore'), 'botocore.config': config_module}):
             result = await synthesize('polly', 'hello', {})
         self.assertEqual(result.audio, MP3)
+        boto.Session.assert_called_once_with()
         client.synthesize_speech.assert_called_once_with(Text='hello', TextType='text', OutputFormat='mp3', VoiceId='Joanna', Engine='neural', SampleRate='24000')
         self.assertEqual(config_module.Config.call_args.kwargs['retries'], {'total_max_attempts': 1})
         stream.close.assert_called_once()

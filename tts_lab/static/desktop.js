@@ -49,7 +49,6 @@
     toggleMaximize: () => action('toggleMaximize'),
     close: () => action('close'),
     getWindowState: () => action('getWindowState'),
-    editCredentials: () => action('editCredentials'),
     restart: () => action('restart'),
     openDataDirectory: () => action('openDataDirectory'),
     getUpdateState: () => tauri.core.invoke('get_update_state'),

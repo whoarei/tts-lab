@@ -275,5 +275,15 @@
     "transport": "httpx.MockTransport only; default sync/async HTTP transports rejected by the smoke check",
     "native_windows_packaged_python": "PENDING",
     "real_deepseek_service": "NOT RUN: no real API key or network call; mock success does not establish account/region/quota availability"
+  },
+  "credential_dialog_change": {
+    "checked_on": "2026-11-14",
+    "status": "Implementation ready for review; no release requested or published for this change.",
+    "python_tests": "PASS: 105 tests run, 104 passed and 1 native NSIS compiler test skipped (compiler unavailable); synthetic credentials and no paid requests. AWS SDK direct-credential resolution also verified locally.",
+    "node_tests": "PASS: 10/10 desktop bridge tests.",
+    "browser_checks": "PASS: browser_smoke.py, browser_tauri_smoke.py, browser_deepseek_smoke.py, browser_credentials_smoke.py using headless system Chromium; disposable data/config; no live cloud calls.",
+    "credentials": "PASS: masked blank inputs, current-input visibility only, save/cancel/Escape cleanup, blank keep/new replace, immediate state, Azure/AWS schemas, unrelated config preservation, atomic failure, invalid input, auth/origin guards, queued-run/install guard and explicit desktop reload.",
+    "native_windows": "PENDING: new isolated native smoke covers credential dialog persistence via the private Tauri proxy; Windows CI required.",
+    "local_rust": "NOT RUN: Cargo is not installed in this execution environment; native changes remove the legacy file editor action."
   }
 }

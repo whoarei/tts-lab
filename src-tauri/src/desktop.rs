@@ -70,7 +70,7 @@ fn request_quit(app: tauri::AppHandle, restart: bool, force: bool) {
         let pending = !force && !state.smoke && state.proxy.has_pending_jobs().unwrap_or(false);
         if !force && !state.smoke && (restart || pending) {
             let message = if restart {
-                "保存 credentials.env 后重启以载入凭证。正在生成的任务会中断，云端请求仍可能完成并计费。配置和历史会保留。"
+                "重启应用会中断正在生成的任务，云端请求仍可能完成并计费。配置和历史会保留。"
             } else {
                 "仍有任务在生成。退出会中断本机等待，云服务仍可能完成并计费。再次打开后请先检查历史，程序不会自动重发。"
             };
@@ -128,30 +128,6 @@ async fn desktop_action(
         }
         "close" => request_quit(app, false, false),
         "restart" => request_quit(app, true, false),
-        "editCredentials" => {
-            let path = app.state::<AppState>().profile.join("credentials.env");
-            #[cfg(windows)]
-            {
-                use std::{
-                    os::windows::process::CommandExt,
-                    process::{Command, Stdio},
-                };
-                let editor = PathBuf::from(
-                    env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into()),
-                )
-                .join("System32/notepad.exe");
-                Command::new(editor)
-                    .arg(path)
-                    .creation_flags(0x08000000)
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
-                    .map_err(|_| "无法打开记事本，请手动编辑配置文件。")?;
-            }
-            #[cfg(not(windows))]
-            open::that_detached(path).map_err(|_| "无法打开凭证文件。")?;
-        }
         "openDataDirectory" => {
             open::that_detached(&app.state::<AppState>().profile)
                 .map_err(|_| "无法打开配置目录。")?;

@@ -11,6 +11,7 @@ const S = {desktop: false, token: '', providers: [], references: [], variants: [
   page: 'test', busy: false, saving: false, dirty: false, ready: false, modelBusy: false, updating: false,
   sessions: {test: newSession(), compare: newSession()}};
 const U = {view: null, pending: false};
+const C = {provider: '', loading: false, saving: false, revision: 0};
 const samples = [
   ['中文日常', '你好，欢迎来到语音对比工作台。今天我们不看排行榜，而是用同一段文字，听一听不同声音的自然度、停顿和情感。你更喜欢哪一种？'],
   ['数字与多音字', '银行行长说，这张银行卡不能转借。重庆的重量级选手重新出发。订单编号是 A-1028，金额为 3,205.60 元，折扣是百分之十五，发车时间是 2026 年 11 月 9 日上午 8 点 05 分。'],
@@ -99,7 +100,7 @@ function updateConsent() {
   }
 }
 function freezeUpdateControls() {
-  for (const control of document.querySelectorAll('#text, #compare-text, .samples button, #test-cloud-consent, #compare-cloud-consent, #local-device, #local-model-list button, #edit-credentials, #restart-app, .score-grid select, .result-notes, .score-actions button')) {
+  for (const control of document.querySelectorAll('#text, #compare-text, .samples button, #test-cloud-consent, #compare-cloud-consent, #local-device, #local-model-list button, #cloud-services button, #credential-fields input, #credential-fields select, #credential-fields button, .score-grid select, .result-notes, .score-actions button')) {
     if (S.updating) {
       if (!control.hasAttribute('data-update-disabled')) control.dataset.updateDisabled = control.disabled ? '1' : '0';
       control.disabled = true;
@@ -110,7 +111,7 @@ function freezeUpdateControls() {
   }
 }
 function lockControls() {
-  const locked = S.busy || S.saving || S.updating || !S.ready;
+  const locked = S.busy || S.saving || C.saving || S.updating || !S.ready;
   $('#test-generate').disabled = locked || !S.savedVariants.length;
   $('#compare-generate').disabled = locked || !S.variants.length;
   $('#test-variant').disabled = locked;
@@ -120,6 +121,7 @@ function lockControls() {
   for (const button of document.querySelectorAll('.clone-variant')) button.disabled = locked || S.variants.length >= 6;
   for (const button of document.querySelectorAll('.remove-variant')) button.disabled = locked || S.variants.length === 1;
   freezeUpdateControls();
+  credentialControls();
   renderUpdateControls();
 }
 function renderSelection() {
@@ -303,12 +305,12 @@ async function poll(page, batchId) {
   } catch (error) { finishRun(page); notice(`${error.message} 已停止轮询，任务可能仍在后台完成，请从历史记录查看，避免重复调用。`, true); }
 }
 async function generate(page) {
-  if (S.busy || S.saving || S.updating || !S.ready) return;
+  if (S.busy || S.saving || C.saving || S.updating || !S.ready) return;
   notice(''); const text = $(page === 'test' ? '#text' : '#compare-text').value.trim();
   if (!text) { notice('请先输入要朗读的文本。', true); return; }
   const variants = page === 'test' ? S.savedVariants.filter(item => item.uid === S.selected) : S.variants;
   if (!variants.length) { notice('请先配置并保存一个方案。', true); return; }
-  if (variants.some(variant => !isReady(variant))) { notice('所选方案尚未就绪，请在「模型配置」中下载对应模型或编辑 API 凭证并重启。', true); return; }
+  if (variants.some(variant => !isReady(variant))) { notice('所选方案尚未就绪，请在「模型配置」中下载对应模型或点击服务卡片配置凭证。', true); return; }
   S.busy = true; lockControls(); $(`#${page}-generate`).textContent = '正在生成…';
   try {
     const data = await api('/api/batches', {method: 'POST', body: JSON.stringify({text, variants: variants.map(({provider, params}) => ({provider, params})), allow_cloud: $(`#${page}-cloud-consent`).checked})});
@@ -342,8 +344,151 @@ async function history() {
 function renderServices() {
   const root = $('#cloud-services'); root.replaceChildren();
   for (const item of S.providers.filter(item => !['local', 'demo'].includes(item.family))) {
-    const card = el('div', undefined, 'service-item'); card.append(el('b', item.name), el('span', item.ready ? '● 已检测到配置' : '○ 尚未配置', item.ready ? 'available' : '')); root.append(card);
+    const card = el('button', undefined, 'service-item');
+    card.type = 'button'; card.dataset.provider = item.id;
+    card.setAttribute('aria-haspopup', 'dialog'); card.setAttribute('aria-controls', 'credential-dialog');
+    card.setAttribute('aria-label', `配置 ${item.name}`);
+    card.disabled = S.updating || C.saving;
+    card.append(el('b', item.name), el('span', item.credentials_configured ? '● 已配置' : '○ 待配置', item.credentials_configured ? 'available' : ''), el('span', '点击配置 →', 'service-configure'));
+    card.onclick = () => openCredentials(item.id); root.append(card);
   }
+}
+function credentialControls() {
+  $('#credential-save').disabled = C.loading || C.saving || !C.provider || S.busy || S.modelBusy || S.updating;
+  $('#credential-save').textContent = C.saving ? '正在保存…' : '保存配置';
+  $('#credential-close').disabled = C.saving;
+  $('#credential-cancel').disabled = C.saving;
+  for (const control of document.querySelectorAll('#credential-fields input, #credential-fields select, #credential-fields button')) {
+    control.disabled = C.saving || S.updating || !!control.closest('[data-aws-mode][hidden]');
+  }
+}
+function credentialError(message = '') {
+  $('#credential-error').textContent = message;
+  $('#credential-error').hidden = !message;
+}
+function closeCredentials() {
+  if (C.saving) return;
+  const id = C.provider;
+  clearCredentials();
+  $('#credential-dialog').close();
+  // A successful save replaces the card nodes; focus the current card.
+  queueMicrotask(() => $(`#cloud-services [data-provider="${id}"]`)?.focus());
+}
+function clearCredentials() {
+  for (const input of $('#credential-dialog').querySelectorAll('input')) { input.value = ''; input.type = 'password'; }
+  $('#credential-fields').replaceChildren(); credentialError();
+  C.revision++; C.provider = ''; C.loading = false;
+}
+function setupCredentials() {
+  const dialog = $('#credential-dialog');
+  $('#credential-close').onclick = closeCredentials;
+  $('#credential-cancel').onclick = closeCredentials;
+  dialog.addEventListener('cancel', event => { event.preventDefault(); closeCredentials(); });
+  dialog.addEventListener('close', () => {
+    // Clear even revealed, unsaved inputs on every exit (including Escape).
+    if (!dialog.open && C.provider) clearCredentials();
+  });
+  $('#credential-form').onsubmit = saveCredentials;
+}
+async function openCredentials(id) {
+  if (S.updating || C.saving) return;
+  C.provider = id; C.loading = true;
+  const revision = ++C.revision;
+  $('#credential-title').textContent = `${provider(id).name} 配置`;
+  $('#credential-fields').replaceChildren(el('p', '正在读取配置状态…', 'hint'));
+  credentialError(); credentialControls(); $('#credential-dialog').showModal();
+  try {
+    const settings = await api(`/api/credentials/${id}`);
+    if (revision !== C.revision) return;
+    renderCredentialFields(settings);
+  } catch {
+    if (revision !== C.revision) return;
+    C.provider = ''; $('#credential-fields').replaceChildren();
+    credentialError('无法读取配置状态，请关闭后重试。');
+  } finally {
+    if (revision === C.revision) { C.loading = false; credentialControls(); }
+  }
+}
+function renderCredentialFields(settings) {
+  const root = $('#credential-fields'); root.replaceChildren();
+  if (settings.provider === 'polly') {
+    const label = el('label', '认证方式', 'credential-field');
+    const mode = el('select'); mode.id = 'credential-mode';
+    mode.append(option('keys', 'Access Key / Secret Key'), option('profile', '本机 AWS Profile'));
+    mode.value = settings.mode; label.append(mode); root.append(label);
+    mode.onchange = () => {
+      for (const row of root.querySelectorAll('[data-aws-mode]')) {
+        const hidden = row.dataset.awsMode !== mode.value || (row.dataset.awsTemporary && !$('#credential-temporary')?.checked); row.hidden = hidden;
+        for (const control of row.querySelectorAll('input, button')) control.disabled = hidden;
+      }
+    };
+  }
+  for (const field of settings.fields) {
+    const row = el('div', undefined, 'credential-field');
+    if (settings.provider === 'polly') {
+      if (field.key === 'AWS_PROFILE') row.dataset.awsMode = 'profile';
+      else if (['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'].includes(field.key)) row.dataset.awsMode = 'keys';
+      if (field.key === 'AWS_SESSION_TOKEN') row.dataset.awsTemporary = '1';
+    }
+    const id = `credential-${field.key}`;
+    const label = el('label', field.label); label.htmlFor = id;
+    if (field.secret) label.append(el('span', field.configured ? '已配置' : '未配置', 'credential-state'));
+    const wrap = el('div', undefined, 'credential-input');
+    const input = el('input'); input.id = id; input.dataset.credential = field.key;
+    input.type = field.secret ? 'password' : 'text'; input.maxLength = 4096;
+    input.autocomplete = 'off'; input.spellcheck = false; input.setAttribute('autocapitalize', 'off');
+    input.value = field.secret ? '' : field.value || '';
+    input.placeholder = field.secret ? (field.configured ? '已配置，留空保留；输入新值替换' : '请输入凭证') : field.key;
+    input.setAttribute('aria-describedby', 'credential-help'); wrap.append(input);
+    if (field.secret) {
+      const eye = el('button', undefined, 'credential-eye'); eye.type = 'button';
+      eye.setAttribute('aria-label', `显示新输入的 ${field.label}`); eye.setAttribute('aria-pressed', 'false');
+      // Constant SVG only; no API data is interpreted as markup.
+      eye.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="m3 3 18 18"/></svg>';
+      eye.onclick = () => {
+        const shown = input.type === 'password'; input.type = shown ? 'text' : 'password';
+        eye.setAttribute('aria-pressed', String(shown));
+        eye.setAttribute('aria-label', `${shown ? '隐藏' : '显示'}新输入的 ${field.label}`);
+      };
+      wrap.append(eye);
+    }
+    row.append(label, wrap);
+    if (field.help) row.append(el('p', field.help, 'credential-variable'));
+    root.append(row);
+  }
+  if (settings.provider === 'polly') {
+    const label = el('label', undefined, 'check credential-temporary');
+    label.dataset.awsMode = 'keys';
+    const check = el('input'); check.type = 'checkbox'; check.id = 'credential-temporary'; check.checked = settings.temporary;
+    check.onchange = () => $('#credential-mode').onchange();
+    label.append(check, document.createTextNode('使用临时凭证（需要 Session Token）；取消后保存会清除旧 Token'));
+    root.append(label); $('#credential-mode').onchange();
+  }
+  const first = root.querySelector('input:not(:disabled), select'); first?.focus();
+}
+async function saveCredentials(event) {
+  event.preventDefault();
+  if (C.loading || C.saving || !C.provider || S.busy || S.modelBusy || S.updating) return;
+  const values = {};
+  for (const input of document.querySelectorAll('#credential-fields input[data-credential]:not(:disabled)')) values[input.dataset.credential] = input.value;
+  const body = {values};
+  if (C.provider === 'polly') { body.mode = $('#credential-mode').value; body.temporary = $('#credential-temporary').checked; }
+  C.saving = true; credentialError(); lockControls();
+  for (const input of document.querySelectorAll('#credential-fields input[data-credential]')) {
+    if (input.closest('.credential-input').querySelector('.credential-eye')) input.type = 'password';
+  }
+  for (const eye of document.querySelectorAll('.credential-eye')) {
+    eye.setAttribute('aria-pressed', 'false');
+    eye.setAttribute('aria-label', eye.getAttribute('aria-label').replace('隐藏', '显示'));
+  }
+  try {
+    const result = await api(`/api/credentials/${C.provider}`, {method: 'PUT', body: JSON.stringify(body)});
+    S.providers = result.providers;
+    C.saving = false; closeCredentials(); renderServices();
+    renderVariants(); renderSelection(); notice('配置已保存并生效。账号权限与模型可用性将在首次生成时验证。');
+  } catch (error) {
+    credentialError(error.message || '保存失败，请稍后重试。');
+  } finally { C.saving = false; lockControls(); }
 }
 function renderUpdateControls() {
   const view = U.view;
@@ -357,7 +502,7 @@ function renderUpdateControls() {
   download.disabled = active;
   download.textContent = view.status === 'error' ? '重试下载' : '下载更新';
   install.hidden = development || !['ready', 'installing'].includes(view.status);
-  install.disabled = active || S.busy || S.saving || S.modelBusy;
+  install.disabled = active || S.busy || S.saving || C.saving || S.modelBusy;
   install.textContent = view.status === 'installing' ? '正在安装…' : '安装并重启';
   $('#app-update-install-hint').textContent = development
     ? '开发环境仅检查版本，请从发布页下载安装。'
@@ -403,7 +548,7 @@ function updateStorage(key, value) {
 }
 async function updateAction(action) {
   if (U.pending || ['checking', 'downloading', 'installing'].includes(U.view?.status)) return;
-  if (action === 'installUpdate' && (U.view?.status !== 'ready' || S.busy || S.saving || S.modelBusy)) return;
+  if (action === 'installUpdate' && (U.view?.status !== 'ready' || S.busy || S.saving || C.saving || S.modelBusy)) return;
   U.pending = true;
   if (action === 'checkUpdate') updateStorage('ttsLab.updates.lastCheckAt', String(Date.now()));
   renderUpdateView({...U.view, status: {checkUpdate: 'checking', downloadUpdate: 'downloading', installUpdate: 'installing'}[action], error: ''});
@@ -444,13 +589,10 @@ async function setupUpdates() {
 async function setupDesktop() {
   if (!window.ttsDesktop) return;
   $('#window-controls').hidden = false; $('#desktop-settings').hidden = false;
-  $('#config-guide').textContent = '点击「编辑 API 凭证」，在本机文件中填写服务密钥。保存后点击「重启并载入」，即可在方案中选择对应服务。';
   const desktopAction = action => async () => { try { await action(); } catch { notice('桌面操作未完成，请稍后重试。', true); } };
   $('#window-minimize').onclick = desktopAction(() => window.ttsDesktop.minimize());
   $('#window-maximize').onclick = desktopAction(() => window.ttsDesktop.toggleMaximize());
   $('#window-close').onclick = desktopAction(() => window.ttsDesktop.close());
-  $('#edit-credentials').onclick = desktopAction(() => { if (!S.updating) return window.ttsDesktop.editCredentials(); });
-  $('#restart-app').onclick = desktopAction(() => { if (!S.updating) return window.ttsDesktop.restart(); });
   $('#open-data-directory').onclick = desktopAction(() => window.ttsDesktop.openDataDirectory());
   const updateWindowState = state => {
     const button = $('#window-maximize'), label = state.maximized ? '还原' : '最大化';
@@ -461,6 +603,7 @@ async function setupDesktop() {
   updateWindowState(await window.ttsDesktop.getWindowState());
 }
 async function init() {
+  setupCredentials();
   window.addEventListener('tts-desktop-error', event => notice(event.detail, true));
   try { await setupDesktop(); } catch { notice('无法读取窗口状态，请稍后重试。', true); }
   void setupUpdates();
@@ -519,7 +662,7 @@ async function refreshModels() {
     const root = $('#local-model-list');
     root.replaceChildren();
     const busy = data.models.some(m => m.busy);
-    S.modelBusy = busy; renderUpdateControls();
+    S.modelBusy = busy; renderUpdateControls(); credentialControls();
     for (const model of data.models) {
       const card = el('article', undefined, 'model-card');
       card.dataset.model = model.id;

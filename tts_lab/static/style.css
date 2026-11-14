@@ -4,3 +4,32 @@
 .field audio{width:100%;min-width:0;height:36px}
 
 .update-panel{margin-top:24px;scroll-margin-top:76px}.update-panel>.section-title{margin-bottom:10px}.update-panel progress{width:100%;height:9px;accent-color:var(--accent);margin-top:16px}.update-panel details{margin-top:16px;font-size:11px;color:var(--muted)}.update-panel pre{font:inherit;white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;background:#f7f9fa;border:1px solid var(--line);border-radius:6px;padding:14px;color:var(--ink)}.update-auto{margin-top:18px;align-items:flex-start;font-size:11px}.update-auto input{margin-top:3px}#updates-shortcut{width:100%;font-size:10px;white-space:normal;text-align:left}#app-update-title:focus{outline:none}#app-update-version{overflow-wrap:anywhere;min-width:0}.update-panel .settings-actions{row-gap:8px;column-gap:14px}
+
+/* Provider card configuration dialog. */
+button.service-item{width:100%;text-align:left;background:var(--paper);color:var(--ink);font-family:inherit;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+button.service-item:hover:not(:disabled){border-color:var(--accent);box-shadow:0 2px 10px #247a7010}
+button.service-item:focus-visible,.credential-eye:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.service-item .service-configure{color:var(--accent);margin-top:12px;font-size:11px}
+#credential-dialog{width:min(540px,calc(100vw - 32px));max-height:calc(100dvh - 48px);padding:28px;border:1px solid var(--line);border-radius:14px;color:var(--ink);background:var(--paper);box-shadow:0 20px 80px #17212d33;overflow:auto}
+#credential-dialog::backdrop{background:#17212d66}
+.credential-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.credential-heading h2{font-size:21px;line-height:1.4;margin:6px 0 16px;overflow-wrap:anywhere}
+.credential-heading .text-button{padding:4px 8px;font-size:18px}
+#credential-help{line-height:1.8;margin:0 0 22px}
+.credential-field{display:block;margin:0 0 18px}
+.credential-field>label{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;margin-bottom:8px}
+.credential-state{font-size:11px;color:var(--muted);font-weight:400}
+.credential-input{position:relative;display:flex;align-items:center}
+.credential-input input{width:100%;min-width:0;padding:11px 46px 11px 12px;border:1px solid var(--line);border-radius:7px;background:var(--paper);color:var(--ink);font:inherit;font-size:13px;box-sizing:border-box}
+.credential-input input:focus{outline:2px solid #247a7028;border-color:var(--accent)}
+.credential-input input::placeholder{color:#939faa;font-size:12px}
+.credential-eye{position:absolute;right:5px;top:50%;transform:translateY(-50%);width:34px;height:34px;display:grid;place-items:center;border:0;background:transparent;color:var(--muted);border-radius:5px;cursor:pointer;padding:0}
+.credential-eye:hover{color:var(--accent);background:#247a700a}
+.credential-eye[aria-pressed=false] .eye-slash{display:none}
+.credential-variable{font-size:10px;color:var(--muted);margin:6px 0 0;overflow-wrap:anywhere}
+.credential-storage{border-top:1px solid var(--line);padding-top:18px;line-height:1.8;margin-top:22px}
+.credential-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
+#credential-error{font-size:13px;line-height:1.7}
+.credential-temporary{font-size:12px;line-height:1.7}
+.credential-field[hidden],.credential-temporary[hidden]{display:none}
+@media(max-width:540px){#credential-dialog{padding:22px 18px;max-height:calc(100dvh - 24px)}}

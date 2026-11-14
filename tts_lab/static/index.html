@@ -56,7 +56,7 @@
       </section>
       <section id="page-models" class="page" hidden aria-labelledby="models-title">
         <div class="page-heading"><div><div class="eyebrow">MODELS & SERVICES</div><h1 id="models-title" tabindex="-1">模型配置</h1><p>下载本地模型，或连接你自己的云端语音服务。</p></div></div>
-        <section class="panel credentials-panel"><div><h2>云服务凭证</h2><p id="config-guide">在项目根目录将 .env.example 复制为 .env，填写所需服务密钥，保存后重启程序。</p></div><div id="desktop-settings" class="settings-actions" hidden><button id="edit-credentials" class="secondary">编辑 API 凭证</button><button id="restart-app" class="secondary">重启并载入凭证</button><button id="open-data-directory" class="text-button">打开配置目录 ↗</button></div><p class="hint">凭证仅在本机文件中保存，界面不会显示密钥。检测到配置不代表账号与模型权限已验证。</p><div id="cloud-services" class="service-grid"></div></section>
+        <section class="panel credentials-panel"><div><h2>云服务凭证</h2><p id="config-guide">点击服务卡片配置凭证，保存后立即生效。</p></div><div id="desktop-settings" class="settings-actions" hidden><button id="open-data-directory" class="text-button">打开配置目录 ↗</button></div><p class="hint">已保存的 Key 仅显示配置状态。凭证以本机明文文件保存；检测到配置不代表账号与模型权限已验证。</p><div id="cloud-services" class="service-grid"></div></section>
         <section id="app-update-panel" class="panel update-panel" aria-labelledby="app-update-title" hidden>
           <div class="section-title"><h2 id="app-update-title" tabindex="-1">应用更新</h2><span id="app-update-version"></span><button id="check-app-update" class="secondary push">检查更新</button></div>
           <p id="app-update-status" class="hint" role="status" aria-live="polite">尚未检查更新。</p>
@@ -75,5 +75,15 @@
     </main>
   </div>
   <template id="results-template"><section class="results-section"><div class="section-title"><h2>试听结果</h2><label class="check push blind-control"><input class="blind" type="checkbox"> 盲听模式</label></div><p class="hint blind-hint">盲听会随机排列并隐藏服务名称和参数。取消勾选即可揭晓，下载和导出会包含服务名称。</p><details class="source-panel" hidden><summary>本轮朗读原文</summary><p class="source-text"></p></details><div class="results result-grid"><div class="empty"><div class="empty-icon">♫</div><h3>等待你的第一段声音</h3><p>生成后，在这里试听、查看参数并下载音频。</p></div></div><div class="exports" hidden><a class="download-batch secondary">下载音频与配置 ZIP</a><a href="/api/export.csv" class="secondary">导出最近记录 CSV</a></div></section></template>
+  <dialog id="credential-dialog" aria-labelledby="credential-title" aria-describedby="credential-help">
+    <form id="credential-form" autocomplete="off">
+      <div class="credential-heading"><div><div class="eyebrow">SERVICE SETTINGS</div><h2 id="credential-title">配置云服务</h2></div><button id="credential-close" type="button" class="text-button" aria-label="关闭配置">✕</button></div>
+      <p id="credential-help" class="hint">Key 留空保留原配置，输入新值则替换。眼睛按钮仅查看本次输入；已保存的 Key 不会回显。</p>
+      <div id="credential-fields"></div>
+      <p id="credential-error" class="error" role="alert" hidden></p>
+      <p class="hint credential-storage">仅保存到本机，不发起语音请求。模型、音色和服务地域等生成参数可在「方案对比」中设置。</p>
+      <div class="credential-actions"><button id="credential-cancel" type="button" class="secondary">取消</button><button id="credential-save" type="submit" class="primary" disabled>保存配置</button></div>
+    </form>
+  </dialog>
 </body>
 </html>
