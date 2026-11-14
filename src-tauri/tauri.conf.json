@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "TTS Lab",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "identifier": "io.github.whoarei.ttslab",
   "build": {
     "beforeDevCommand": "python scripts/prepare_frontend.py",

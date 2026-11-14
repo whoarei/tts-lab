@@ -117,6 +117,7 @@ jobs:
           $version = (Get-Content package.json | ConvertFrom-Json).version
           ./scripts/check_windows_updates.ps1 -Bundle "dist/TTS-Lab-$version-win-x64" -Installer "dist/TTS-Lab-$version-win-x64-setup.exe" -PortableZIP "dist/TTS-Lab-$version-win-x64.zip"
           ./scripts/check_windows_updates.ps1 -Bundle "dist/TTS-Lab-$version-win-x64" -Installer "dist/TTS-Lab-$version-win-x64-setup.exe" -PortableZIP "dist/TTS-Lab-$version-win-x64.zip" -BaselineVersion '0.7.0'
+          ./scripts/check_windows_updates.ps1 -Bundle "dist/TTS-Lab-$version-win-x64" -Installer "dist/TTS-Lab-$version-win-x64-setup.exe" -PortableZIP "dist/TTS-Lab-$version-win-x64.zip" -BaselineVersion '0.8.0'
       - uses: actions/upload-artifact@v4
         with:
           name: TTS-Lab-Windows-x64
@@ -147,8 +148,10 @@ jobs:
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
           本次更新：
-          - 新增 DeepSeek 官方 TTS API，支持 Stella / Tide 音色和 Markdown 过滤，生成 24 kHz 单声道 WAV。
-          - 配置 DEEPSEEK_API_KEY 后可在文本测试、方案对比及保存方案中使用；现有用户在凭证配置中添加此项并重启。
+          - 点击云服务卡片打开配置弹窗，按服务显示 API Key、地域、项目或 AWS 认证方式。
+          - Key 默认隐藏，小眼睛仅查看本次输入；已保存的 Key 不回显，留空保留、输入新值替换。
+          - 保存后立即生效，无需编辑文件或重启；取消、Esc 和保存成功后清空输入。
+          - 保存不发起云端请求；生成或模型安装期间禁止更换凭证，写入失败保留原配置。
           - 保留桌面在线更新、全部已有语音服务、本地模型及个人方案、凭证和历史目录。
           - 验证使用官方契约的模拟请求，未使用真实付费 DeepSeek 账号验证音质或权限。
 
@@ -157,10 +160,10 @@ jobs:
           - win-x64.zip：完整解压后运行 TTS Lab.exe，需已安装 Microsoft WebView2 Evergreen Runtime；保留旁边所有文件。
           - 两种版本均包含 Python 和应用依赖；本地人声模型与推理环境按需另行下载，升级保留个人配置和历史。
           - exe.sha256 / zip.sha256：对应下载文件的 SHA256 校验值。
-          - 0.7.0 用户可从“应用更新”升级；已发布的 0.6.0 需要手动安装本版本一次。
+          - 0.7.0、0.8.0 用户可从“应用更新”升级；已发布的 0.6.0 需要手动安装本版本一次。
           - 更新源为本项目 GitHub Release，使用 HTTPS 与 SHA256；当前发布渠道没有独立更新签名。
 
-          验证：Windows 工作流执行 Rust 测试、Tauri release 编译、安装器编译、锁定依赖及包完整性校验，使用包内 Python 验证后端、DeepSeek 模拟 PCM 合成、离线 WAV 和参考录音存储，并执行原生桌面离线冒烟检查。更新回归使用已发布 0.6.0 与 0.7.0 的安装版、便携包及 0.7.0 的实际更新程序，检查升级、完整载荷与用户文件保留，以及无效包在开始替换前的拒绝。真实云端调用、完整 GPU 推理及交互式安装体验仍需单独验证。云端调用可能收费；离线测试音不是人声。应用未做代码签名。
+          验证：Windows 工作流执行 Rust 测试、Tauri release 编译、安装器编译、锁定依赖及包完整性校验，使用包内 Python 验证后端、DeepSeek 模拟 PCM 合成、离线 WAV 和参考录音存储，并执行原生凭证弹窗、输入可见性和保存后不回显检查。更新回归使用已发布 0.6.0、0.7.0 和 0.8.0 的安装版与便携包，以及 0.7.0/0.8.0 自带的实际更新程序，检查升级、完整载荷与用户文件保留，以及无效包在开始替换前的拒绝。真实云端调用、完整 GPU 推理及交互式安装体验仍需单独验证。云端调用可能收费；离线测试音不是人声。应用未做代码签名。
           NOTES
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists; refusing to replace published assets." >&2
