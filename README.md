@@ -10,8 +10,8 @@
 
 支持 **Windows 10 / 11 x64**，Python 和应用依赖随包提供，无需另装 Python 或 Node.js。Tauri 版需要 **Microsoft Edge WebView2 Runtime**：安装版会检测并在缺少时联网安装；便携版须先确保电脑已安装该运行时。使用已有运行时无需重复下载，离线电脑请提前准备运行时。
 
-- **安装版**：运行 `TTS-Lab-0.8.1-win-x64-setup.exe`，按提示安装，再从开始菜单打开 TTS Lab。默认安装到当前用户目录，无需管理员权限。
-- **便携版**：完整解压 `TTS-Lab-0.8.1-win-x64.zip`，双击文件夹里的 `TTS Lab.exe`。请保留旁边的全部文件。
+- **安装版**：运行 [TTS-Lab-0.8.1-win-x64-setup.exe](https://github.com/whoarei/tts-lab/releases/download/v0.8.1/TTS-Lab-0.8.1-win-x64-setup.exe)，按提示安装，再从开始菜单打开 TTS Lab。默认安装到当前用户目录，无需管理员权限。
+- **便携版**：完整解压 [TTS-Lab-0.8.1-win-x64.zip](https://github.com/whoarei/tts-lab/releases/download/v0.8.1/TTS-Lab-0.8.1-win-x64.zip)，双击文件夹里的 `TTS Lab.exe`。请保留旁边的全部文件。
 
 升级前先退出应用。安装版可直接安装新版；便携版解压到新文件夹后打开。个人配置、模型和历史会保留，卸载安装版也不会删除这些数据。
 
