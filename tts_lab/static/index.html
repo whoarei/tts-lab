@@ -26,6 +26,7 @@
       <button class="nav-item" data-view="models" id="open-local-models"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></svg><span>模型配置</span></button>
     </nav>
     <nav class="sidebar-bottom" aria-label="应用">
+      <button class="nav-item" data-view="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg><span>设置</span></button>
       <button id="about-navigation" class="nav-item" data-view="about"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.1"/></svg><span>关于</span><span id="about-update-indicator" class="update-dot" aria-hidden="true" hidden></span></button>
     </nav>
   </aside>
@@ -46,14 +47,13 @@
         </section>
       </div>
       <div class="runbar"><button id="generate" class="primary">试听</button></div>
-      <section id="results-section" class="results-section" aria-labelledby="results-title" hidden>
-        <div class="section-title"><h2 id="results-title">试听结果</h2><label id="blind-control" class="check push" hidden><input id="blind" type="checkbox">盲听模式</label></div>
-        <p class="hint" id="blind-hint" hidden>随机排列并隐藏方案信息；下载与导出会显示身份。</p>
-        <details id="source-panel" hidden><summary>本轮朗读原文</summary><p id="source-text"></p></details>
+      <section id="results-section" class="results-section" aria-label="音频播放" hidden>
+        <div class="result-controls"><label id="blind-control" class="check" hidden><input id="blind" type="checkbox" aria-describedby="blind-hint">盲听模式</label></div>
+        <p class="sr-only" id="blind-hint" hidden>随机排列并隐藏方案信息；下载文件包含方案信息。</p>
         <div id="results" class="result-grid"></div>
-        <div class="exports" id="exports" hidden><a id="download-batch" class="secondary">下载音频与参数</a><a href="/api/export.csv" class="text-button">导出历史 CSV</a></div>
+        <div class="exports" id="exports" hidden><a id="download-batch" class="secondary" download>下载音频</a></div>
       </section>
-      <details id="history-panel" class="history-panel"><summary>历史记录</summary><div id="history"></div></details>
+      <section id="history-panel" class="history-panel" aria-labelledby="history-title"><h2 id="history-title">历史记录</h2><div id="history" aria-live="polite"></div><nav id="history-pagination" class="history-pagination" aria-label="历史记录分页" hidden><button id="history-prev" class="text-button" aria-label="上一页历史记录">上一页</button><span id="history-page"></span><button id="history-next" class="text-button" aria-label="下一页历史记录">下一页</button></nav></section>
     </div>
     <section id="local-model-panel" hidden aria-label="模型配置">
       <div class="section-title"><h2>本地模型</h2><label class="model-device push">运行设备<select id="local-device" aria-label="运行设备"><option value="cpu">CPU</option><option value="cuda">NVIDIA GPU</option></select></label></div>
@@ -64,6 +64,14 @@
       <div id="cloud-services" class="cloud-model-list"></div>
       <details class="help-details"><summary>API 凭证配置</summary><p id="config-guide">将项目根目录的 .env.example 复制为 .env，填写服务密钥后重启程序。</p><p>配置状态仅表示已检测到凭证，账号权限、模型与音色的可用性在首次生成时验证。</p></details>
 
+    </section>
+    <section id="settings-panel" hidden aria-labelledby="preferences-title">
+      <h2 id="preferences-title">历史记录</h2>
+      <form id="preferences-form">
+        <label class="field" for="history-retention-days">保留时间<select id="history-retention-days" disabled><option value="1">1 天</option><option value="7">7 天</option><option value="30" selected>30 天</option><option value="90">90 天</option><option value="365">365 天</option><option value="0">永久</option></select></label>
+        <p id="preferences-expiry-hint" class="hint">到期后删除记录和音频。</p>
+        <div class="preferences-actions"><button id="save-preferences" class="secondary" type="submit" disabled>保存</button><span id="preferences-status" role="status" aria-live="polite"></span></div>
+      </form>
     </section>
     <section id="about-panel" hidden aria-labelledby="about-title">
       <div class="about-identity"><img class="about-icon" src="/static/icon.svg" alt=""><div><h2 id="about-title">TTS Lab</h2><div class="about-version"><span id="app-version"></span><span id="app-update-version">浏览器版</span></div></div></div>

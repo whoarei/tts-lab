@@ -280,7 +280,7 @@ function renderServices() {
   });
 }
 function freezeUpdateControls() {
-  for (const control of document.querySelectorAll('#generate, #add-variant, .variant input, .variant select, .variant textarea, .variant button, #text, .samples button, #clear-text, #local-device, #local-model-list button, #cloud-services button, .score-grid select, .result-notes, .score-actions button, #preset-name, #confirm-save')) {
+  for (const control of document.querySelectorAll('#generate, #add-variant, .variant input, .variant select, .variant textarea, .variant button, #text, .samples button, #clear-text, #local-device, #local-model-list button, #cloud-services button, #preset-name, #confirm-save, #history-retention-days, #save-preferences')) {
     if (S.updating) {
       if (!control.hasAttribute('data-update-disabled')) control.dataset.updateDisabled = control.disabled ? '1' : '0';
       control.disabled = true;
@@ -290,7 +290,7 @@ function freezeUpdateControls() {
   }
 }
 function lockControls() {
-  freezeUpdateControls(); renderVariants(); credentialControls(); renderUpdateControls();
+  freezeUpdateControls(); renderVariants(); credentialControls(); renderUpdateControls(); renderPreferencesControls();
 }
 async function setupSettings() {
   setupCredentials();
@@ -315,4 +315,54 @@ async function refreshAboutActivity() {
     renderUpdateControls();
   } catch { /* Native installation also checks backend activity before applying. */ }
   if (S.view === 'about' && !S.updating) activityTimer = setTimeout(refreshAboutActivity, 2000);
+}
+
+const Preferences = {loaded: false, loading: false, saving: false, revision: 0};
+function preferencesStatus(message = '', error = false) {
+  const status = $('#preferences-status');
+  status.textContent = message; status.classList.toggle('error', error);
+}
+function renderPreferencesControls() {
+  $('#history-retention-days').disabled = !Preferences.loaded || Preferences.loading || Preferences.saving || S.updating;
+  $('#preferences-expiry-hint').hidden = $('#history-retention-days').value === '0';
+  $('#save-preferences').disabled = !Preferences.loaded || !S.token || Preferences.loading || Preferences.saving || S.updating;
+  $('#save-preferences').textContent = Preferences.saving ? '保存中…' : '保存';
+}
+function showRetentionPreference(data) {
+  const days = data.history_retention_days;
+  if (!Number.isInteger(days) || days < 0 || days > 3650) throw new Error('保留时间配置无效，请重新读取。');
+  const select = $('#history-retention-days');
+  for (const item of select.querySelectorAll('[data-custom-retention]')) item.remove();
+  if (!Array.from(select.options).some(item => item.value === String(days))) {
+    const item = option(days, `${days} 天`); item.dataset.customRetention = 'true'; select.append(item);
+  }
+  select.value = String(days); Preferences.loaded = true;
+}
+async function loadPreferences() {
+  const revision = ++Preferences.revision;
+  Preferences.loading = true; preferencesStatus(); renderPreferencesControls();
+  try {
+    const data = await api('/api/settings');
+    if (revision === Preferences.revision) showRetentionPreference(data);
+  } catch (error) {
+    if (revision === Preferences.revision) preferencesStatus(error.message, true);
+  } finally {
+    if (revision === Preferences.revision) { Preferences.loading = false; renderPreferencesControls(); }
+  }
+}
+async function savePreferences(event) {
+  event.preventDefault();
+  if (!S.token || !Preferences.loaded || Preferences.loading || Preferences.saving || S.updating) return;
+  Preferences.saving = true; preferencesStatus(); renderPreferencesControls();
+  try {
+    const data = await api('/api/settings', {method: 'POST', body: JSON.stringify({
+      history_retention_days: Number($('#history-retention-days').value)})});
+    showRetentionPreference(data); preferencesStatus('已保存'); void refreshRetainedHistory();
+  } catch (error) { preferencesStatus(error.message, true); }
+  finally { Preferences.saving = false; renderPreferencesControls(); }
+}
+function setupPreferences() {
+  $('#preferences-form').onsubmit = savePreferences;
+  $('#history-retention-days').onchange = () => { preferencesStatus(); renderPreferencesControls(); };
+  renderPreferencesControls();
 }

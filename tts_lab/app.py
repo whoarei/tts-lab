@@ -12,14 +12,15 @@ from pathlib import Path
 import re
 import secrets
 import tempfile
+import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 import uuid
 import wave
 import zipfile
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
@@ -40,9 +41,18 @@ LIMIT = asyncio.Semaphore(3)
 JOBS: dict[str, dict] = {}
 TASKS: set[asyncio.Task] = set()
 ID = re.compile(r"^[0-9a-f]{32}$")
+HISTORY_LOCK = threading.RLock()
+AUDIO_NAME = re.compile(r"audio\.(wav|mp3|ogg|opus|flac|aac)")
+RUN_STATES = {'queued', 'running', 'completed', 'failed', 'interrupted'}
 
 @asynccontextmanager
 async def lifespan(application):
+    try:
+        cleanup_expired_history()
+    except HTTPException:
+        # Invalid settings must never fall back to a destructive default.
+        # The settings endpoint reports the error and still permits correction.
+        pass
     yield
     await local_models.shutdown()
     pending = list(TASKS)
@@ -124,6 +134,11 @@ class Preset(Variant):
     name: str = Field(min_length=1, max_length=80)
 
 
+class AppSettings(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    history_retention_days: int = Field(strict=True, ge=0, le=3650)
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -135,18 +150,20 @@ def path_for(run_id: str) -> Path:
 
 
 def write_run(run: dict):
-    folder = path_for(run["id"])
-    folder.mkdir(exist_ok=True)
-    tmp = folder / "run.json.tmp"
-    tmp.write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(folder / "run.json")
+    with HISTORY_LOCK:
+        folder = path_for(run["id"])
+        folder.mkdir(exist_ok=True)
+        tmp = folder / "run.json.tmp"
+        tmp.write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(folder / "run.json")
 
 
 def read_run(run_id: str) -> dict:
-    try:
-        return json.loads((path_for(run_id) / "run.json").read_text("utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        raise HTTPException(404, "找不到记录。") from None
+    with HISTORY_LOCK:
+        try:
+            return json.loads((path_for(run_id) / "run.json").read_text("utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            raise HTTPException(404, "找不到记录。") from None
 
 
 def wav_duration(data: bytes) -> float | None:
@@ -202,7 +219,7 @@ async def generate(run: dict):
 
 @app.get("/api/state")
 def state():
-    return {"token": TOKEN, "providers": public_catalog(), "references": reference_audio.list_references(), "version": "0.10.0", "desktop": DESKTOP}
+    return {"token": TOKEN, "providers": public_catalog(), "references": reference_audio.list_references(), "version": "0.11.0", "desktop": DESKTOP}
 
 
 @app.get('/api/activity')
@@ -415,8 +432,9 @@ async def create_batch(batch: Batch):
                "text": text, "text_sha256": hashlib.sha256(text.encode()).hexdigest(),
                "params": safe_params(params), "status": "queued", "created_at": now(),
                "scores": None, "cloud_consent": batch.allow_cloud}
-        write_run(run)
-        JOBS[run["id"]] = run
+        with HISTORY_LOCK:
+            write_run(run)
+            JOBS[run["id"]] = run
         runs.append(run.copy())
         task = asyncio.create_task(generate(run))
         TASKS.add(task)
@@ -460,18 +478,226 @@ async def local_model_remove(model_id: str):
         raise HTTPException(409, str(exc)) from None
 
 
-def saved_runs(limit: int | None = 200):
-    result = []
-    for file in DATA_DIR.glob("*/run.json"):
+def is_history_link(path: Path) -> bool:
+    """Junctions redirect Windows paths even though they are not symlinks."""
+    return path.is_symlink() or getattr(path, 'is_junction', lambda: False)()
+
+
+def write_settings(settings: AppSettings) -> dict:
+    with HISTORY_LOCK:
+        path = DATA_DIR / 'settings.json'
+        if is_history_link(path) or (path.exists() and not path.is_file()):
+            raise HTTPException(500, '设置文件无法写入，请检查数据目录。')
+        temporary = None
         try:
-            run = json.loads(file.read_text("utf-8"))
-            if run["status"] in {"queued", "running"} and run["id"] not in JOBS:
-                run.update(status="interrupted", error="上次进程已停止。调用可能已计费，请检查后手动重试。")
-                write_run(run)
-            result.append(run)
-        except (ValueError, KeyError, OSError):
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=DATA_DIR,
+                                             prefix='.settings-', delete=False) as file:
+                temporary = Path(file.name)
+                json.dump(settings.model_dump(), file, ensure_ascii=False, indent=2)
+                file.flush()
+                os.fsync(file.fileno())
+            temporary.replace(path)
+        except OSError:
+            raise HTTPException(500, '设置保存失败，请重试。') from None
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        return settings.model_dump()
+
+
+def read_settings() -> AppSettings:
+    with HISTORY_LOCK:
+        path = DATA_DIR / 'settings.json'
+        if is_history_link(path):
+            raise HTTPException(500, '无法读取设置，请检查数据目录中的 settings.json。')
+        if not path.exists():
+            default = AppSettings(history_retention_days=30)
+            write_settings(default)
+            return default
+        try:
+            return AppSettings.model_validate_json(path.read_text('utf-8'))
+        except (ValueError, OSError):
+            raise HTTPException(500, '无法读取设置，请检查数据目录中的 settings.json。') from None
+
+
+@app.get('/api/settings')
+def get_settings():
+    return read_settings().model_dump()
+
+
+@app.post('/api/settings')
+def save_settings(settings: AppSettings):
+    with HISTORY_LOCK:
+        payload = write_settings(settings)
+        cleanup_expired_history(settings.history_retention_days)
+        return payload
+
+
+def history_time(value) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.removesuffix('Z') + ('+00:00' if value.endswith('Z') else ''))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        return parsed.astimezone(timezone.utc)
+    except (ValueError, OverflowError):
+        return None
+
+
+def managed_run_files(folder: Path, run: dict) -> list[Path] | None:
+    """Only declared audio plus run.json belong to retention cleanup."""
+    if is_history_link(folder) or not folder.is_dir():
+        return None
+    allowed = {'run.json'}
+    filename = run.get('filename')
+    if filename is not None:
+        if not isinstance(filename, str) or not AUDIO_NAME.fullmatch(filename):
+            return None
+        allowed.add(filename)
+    try:
+        files = list(folder.iterdir())
+        if any(file.name not in allowed or is_history_link(file) or not file.is_file() for file in files):
+            return None
+        if not any(file.name == 'run.json' for file in files):
+            return None
+        return files
+    except OSError:
+        return None
+
+
+def stored_run_entries(protected_batches: set[str] | None = None) -> list[tuple[Path, dict]]:
+    entries = []
+    for folder in DATA_DIR.iterdir():
+        if not ID.fullmatch(folder.name) or is_history_link(folder) or not folder.is_dir():
             continue
-    return {"runs": sorted(result, key=lambda r: r["created_at"], reverse=True)[:limit]}
+        file = folder / 'run.json'
+        if is_history_link(file) or not file.is_file():
+            continue
+        try:
+            run = json.loads(file.read_text('utf-8'))
+            if (not isinstance(run, dict) or run.get('id') != folder.name
+                    or not isinstance(run.get('batch_id'), str) or not ID.fullmatch(run['batch_id'])
+                    or not isinstance(run.get('status'), str) or run['status'] not in RUN_STATES
+                    or not isinstance(run.get('created_at'), str)):
+                if (protected_batches is not None and isinstance(run, dict)
+                        and isinstance(run.get('batch_id'), str) and ID.fullmatch(run['batch_id'])):
+                    protected_batches.add(run['batch_id'])
+                continue
+            if run['status'] in {'queued', 'running'} and run['id'] not in JOBS and managed_run_files(folder, run) is not None:
+                run.update(status='interrupted', error='上次进程已停止。调用可能已计费，请检查后手动重试。')
+                write_run(run)
+            entries.append((folder, run))
+        except (ValueError, TypeError, OSError):
+            continue
+    return entries
+
+
+def remove_history_batch(entries: list[tuple[Path, dict]]) -> bool:
+    # Stage every member before deleting. A failed rename rolls back the whole
+    # group instead of leaving half a comparison visible in history.
+    staged = []
+    staging = None
+    try:
+        staging = Path(tempfile.mkdtemp(prefix='.expired-history-', dir=DATA_DIR))
+        for folder, run in entries:
+            target = staging / folder.name
+            folder.rename(target)
+            staged.append((folder, target, run))
+        if any(managed_run_files(target, run) is None for _, target, run in staged):
+            raise OSError('History changed during cleanup')
+    except OSError:
+        for original, target, _ in reversed(staged):
+            try:
+                if not original.exists():
+                    target.rename(original)
+            except OSError:
+                pass
+        if staging is not None:
+            try:
+                staging.rmdir()
+            except OSError:
+                pass
+        return False
+    # Never recursively delete unexpected files, even if another local process
+    # changes a directory while cleanup is in progress.
+    for _, target, run in staged:
+        files = managed_run_files(target, run)
+        if files is None:
+            continue
+        for file in files:
+            try:
+                file.unlink()
+            except OSError:
+                pass
+        try:
+            target.rmdir()
+        except OSError:
+            pass
+    try:
+        staging.rmdir()
+    except OSError:
+        pass
+    return True
+
+
+def cleanup_expired_history(retention_days: int | None = None, *, current_time: datetime | None = None,
+                            entries: list[tuple[Path, dict]] | None = None,
+                            protected_batches: set[str] | None = None) -> set[str]:
+    with HISTORY_LOCK:
+        days = read_settings().history_retention_days if retention_days is None else retention_days
+        if days == 0:
+            return set()
+        cutoff = (current_time or datetime.now(timezone.utc)) - timedelta(days=days)
+        groups = {}
+        protected_batches = set() if protected_batches is None else protected_batches
+        for folder, run in stored_run_entries(protected_batches) if entries is None else entries:
+            groups.setdefault(run['batch_id'], []).append((folder, run))
+        removed = set()
+        for batch_id, batch in groups.items():
+            if batch_id in protected_batches:
+                continue
+            times = [history_time(run['created_at']) for _, run in batch]
+            if (any(value is None or value >= cutoff for value in times)
+                    or any(run['status'] in {'queued', 'running'}
+                           or JOBS.get(run['id'], {}).get('status') in {'queued', 'running'}
+                           or managed_run_files(folder, run) is None for folder, run in batch)):
+                continue
+            if remove_history_batch(batch):
+                removed.update(run['id'] for _, run in batch)
+                for _, run in batch:
+                    JOBS.pop(run['id'], None)
+        return removed
+
+
+def saved_runs(limit: int | None = 200):
+    with HISTORY_LOCK:
+        protected_batches = set()
+        entries = stored_run_entries(protected_batches)
+        removed = cleanup_expired_history(entries=entries, protected_batches=protected_batches)
+        runs = [run for _, run in entries if run['id'] not in removed]
+        return {'runs': sorted(runs, key=lambda run: run['created_at'], reverse=True)[:limit]}
+
+
+@app.get('/api/history')
+def list_history(page: int = 1, page_size: int = Query(default=10, ge=1, le=100)):
+    groups = {}
+    for run in saved_runs(None)['runs']:
+        groups.setdefault(run['batch_id'], []).append(run)
+    minimum = datetime.min.replace(tzinfo=timezone.utc)
+    batches = [{'batch_id': batch_id, 'runs': sorted(runs, key=lambda run: run['created_at'])}
+               for batch_id, runs in groups.items()]
+    batches.sort(key=lambda batch: (max(history_time(run['created_at']) or minimum for run in batch['runs']),
+                                    batch['batch_id']), reverse=True)
+    total = len(batches)
+    total_pages = (total + page_size - 1) // page_size
+    page = max(1, min(page, total_pages or 1))
+    start = (page - 1) * page_size
+    return {'batches': batches[start:start + page_size], 'page': page, 'page_size': page_size,
+            'total': total, 'total_pages': total_pages}
 
 
 @app.get("/api/runs")
@@ -486,17 +712,18 @@ def get_run(run_id: str):
 
 @app.post("/api/runs/{run_id}/score")
 def save_score(run_id: str, score: Score):
-    run = read_run(run_id)
-    if run["status"] != "completed":
-        raise HTTPException(409, "仅能评价已完成的音频。")
-    if run["family"] == "demo":
-        raise HTTPException(422, "演示提示音不是 TTS，不计入语音效果评分。")
-    run["scores"] = score.model_dump()
-    run["scored_at"] = now()
-    write_run(run)
-    if run_id in JOBS:
-        JOBS[run_id].update(run)
-    return run
+    with HISTORY_LOCK:
+        run = read_run(run_id)
+        if run["status"] != "completed":
+            raise HTTPException(409, "仅能评价已完成的音频。")
+        if run["family"] == "demo":
+            raise HTTPException(422, "演示提示音不是 TTS，不计入语音效果评分。")
+        run["scores"] = score.model_dump()
+        run["scored_at"] = now()
+        write_run(run)
+        if run_id in JOBS:
+            JOBS[run_id].update(run)
+        return run
 
 
 @app.get("/api/runs/{run_id}/audio")

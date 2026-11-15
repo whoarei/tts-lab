@@ -136,6 +136,19 @@ with sync_playwright() as p:
     assert page.locator('#desktop-settings').is_visible()
     assert page.locator('#app-update-panel').is_hidden()
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'check_update')")
+    page.click('[data-view=settings]')
+    page.wait_for_function("() => !document.querySelector('#history-retention-days').disabled")
+    page.select_option('#history-retention-days', '90')
+    page.click('#save-preferences')
+    page.wait_for_function("() => document.querySelector('#preferences-status').textContent === '已保存'")
+    page.click('[data-view=about]')
+    page.click('[data-view=settings]')
+    page.wait_for_function("() => !document.querySelector('#history-retention-days').disabled")
+    assert page.locator('#history-retention-days').input_value() == '90'
+    assert any(method == 'POST' and path == '/api/settings' for method, path, _ in requests)
+    page.select_option('#history-retention-days', '30'); page.click('#save-preferences')
+    page.wait_for_function("() => document.querySelector('#preferences-status').textContent === '已保存'")
+    page.click('[data-view=models]')
     page.click('[data-provider=deepseek]')
     page.wait_for_selector('#credential-DEEPSEEK_API_KEY')
     assert page.locator('#credential-DEEPSEEK_API_KEY').input_value() == ''
@@ -163,7 +176,8 @@ with sync_playwright() as p:
         body:JSON.stringify({text:'Tauri offline audio fixture',variants:[{provider:'demo'}]})});
     }""")
     page.click('[data-view=test]')
-    page.locator('#history-panel').evaluate('(node) => { node.open = true; }')
+    assert page.locator('#history-panel').evaluate('(node) => node.tagName') == 'SECTION'
+    assert page.locator('#history-panel > summary').count() == 0
     page.wait_for_selector('.history-row')
     page.locator('.history-row button').first.click()
     page.wait_for_selector('#results audio')
@@ -173,9 +187,14 @@ with sync_playwright() as p:
     page.wait_for_function("() => document.querySelector('#results audio').currentTime > 0")
     audio.evaluate('(node) => node.pause()')
     original_url = page.url
-    page.click('#results .download')
+    assert page.locator('#results .status, #results h3, #results pre, .rating, .download, #source-panel').count() == 0
+    assert page.locator('#exports a').count() == 1
+    assert page.locator('#download-batch').inner_text() == '下载音频'
     page.click('#download-batch')
-    page.click('#exports a[href="/api/export.csv"]')
+    # Keep native export boundary coverage through its fixed command contract.
+    page.evaluate("() => window.__TAURI__.core.invoke('save_export', {route:'/api/export.csv'})")
+    audio_route = audio.get_attribute('src').removeprefix(api_origin)
+    page.evaluate("route => window.__TAURI__.core.invoke('save_export', {route})", audio_route)
     page.wait_for_function("() => window.__NATIVE_CALLS__.filter(call => call[0] === 'save_export').length === 3")
     assert page.url == original_url
     page.click('[data-view=compare]')
@@ -269,6 +288,7 @@ with sync_playwright() as p:
     page.click('#install-app-update')
     page.wait_for_function("() => typeof window.__FAIL_INSTALL__ === 'function'")
     assert page.locator('#generate').is_disabled()
+    assert page.locator('#save-preferences').is_disabled()
     assert page.locator('.preset').first.is_disabled() and page.locator('#add-variant').is_disabled()
     assert page.locator('.save-preset').first.is_disabled() and page.locator('#local-device').is_disabled()
     assert page.locator('#cloud-services button:enabled').count() == 0

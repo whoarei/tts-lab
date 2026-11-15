@@ -15,13 +15,14 @@ const samples = [
   ['叙事表达', '“你终于来了。”她轻轻地说，声音里有一点惊喜，也有一点委屈。窗外的雨停了，街灯亮了起来。他停顿片刻，笑着回答：“这一次，我不会再错过了。”']
 ];
 const studio = blind => ({variants: [], text: samples[0][1], blind,
-  runs: [], batch: '', order: [], drafts: {}, message: '', error: false, autoplay: false});
+  runs: [], batch: '', order: [], message: '', error: false, autoplay: false});
 const S = {desktop: false, token: '', providers: [], presets: [], view: 'test', studioView: 'test', busy: false,
   references: [], version: '', activityBusy: false, modelBusy: false, updating: false,
   activeMode: '', test: studio(false), compare: studio(true), saveTarget: null, playback: null};
 Object.defineProperty(S, 'saving', {get: () => [...S.test.variants, ...S.compare.variants].some(v => v.saving)});
 const apiUrl = path => window.ttsDesktop?.apiUrl ? window.ttsDesktop.apiUrl(path) : path;
 let modelTimer;
+const H = {page: 1, pageSize: 10, revision: 0};
 const isStudioView = (view = S.view) => view === 'test' || view === 'compare';
 
 function notice(message = '', error = false) {
@@ -323,19 +324,11 @@ function updateRunbar() {
   $('#generate').textContent = S.busy ? '准备试听…' : S.studioView === 'test' ? '试听' : '试听对比';
   credentialControls(); renderUpdateControls();
 }
-function captureScores(mode) {
-  for (const card of document.querySelectorAll('.result-card')) {
-    const selects = card.querySelectorAll('.score-grid select');
-    if (selects.length) mode.drafts[card.dataset.run] = {...Object.fromEntries(Array.from(selects).map(x => [x.name, x.value])),
-      notes: $('.result-notes', card)?.value || ''};
-  }
-}
 function showView(view) {
-  if (!['test', 'compare', 'models', 'about'].includes(view)) return;
+  if (!['test', 'compare', 'models', 'settings', 'about'].includes(view)) return;
   if (isStudioView()) {
     if (S.view !== view) S[S.view].autoplay = false;
     S[S.view].text = $('#text').value;
-    captureScores(S[S.view]);
   }
   S.view = view;
   if (isStudioView(view)) S.studioView = view;
@@ -347,11 +340,16 @@ function showView(view) {
     if (node.dataset.view === view) node.setAttribute('aria-current', 'page');
     else node.removeAttribute('aria-current');
   });
-  $('#page-title').textContent = {test: '文本测试', compare: '方案对比', models: '模型配置', about: '关于'}[view];
+  $('#page-title').textContent = {test: '文本测试', compare: '方案对比', models: '模型配置', settings: '设置', about: '关于'}[view];
   $('#studio-view').hidden = !isStudioView(view);
   $('#local-model-panel').hidden = view !== 'models';
   $('#about-panel').hidden = view !== 'about';
+  $('#settings-panel').hidden = view !== 'settings';
   document.querySelectorAll('audio').forEach(audio => audio.pause());
+  if (view === 'settings') {
+    $('#notice').hidden = true;
+    void loadPreferences(); return;
+  }
   if (view === 'about') {
     $('#notice').hidden = true;
     renderAboutVersion(); void refreshAboutActivity(); return;
@@ -369,7 +367,7 @@ function showView(view) {
   $('#blind-hint').hidden = view !== 'compare' || !S[view].blind;
   $('#results').replaceChildren();
   notice(S[view].message, S[view].error);
-  updateCount(); renderVariants(); renderResults();
+  updateCount(); renderVariants(); renderResults(); void history();
 }
 function shuffle(items) {
   const list = [...items];
@@ -380,68 +378,43 @@ function shuffle(items) {
   return list;
 }
 function stateLabel(state) {
-  return {queued: '排队中', running: '正在合成', completed: '已完成', failed: '生成失败', interrupted: '已中断'}[state] || state;
-}
-function renderScores(card, run, mode) {
-  const details = el('details', undefined, 'rating');
-  details.append(el('summary', '听感评分与笔记'));
-  const grid = el('div', undefined, 'score-grid');
-  const inputs = {};
-  for (const [key, title] of [['naturalness', '自然度'], ['accuracy', '读音准确'], ['expression', '情感表达'], ['usability', '场景适合度']]) {
-    const label = el('label', title), select = el('select');
-    select.name = key; select.append(option('', '请选择'));
-    for (let n = 1; n <= 5; n++) select.append(option(n, `${n} 分`));
-    select.value = mode.drafts[run.id]?.[key] ?? run.scores?.[key] ?? '';
-    label.append(select); grid.append(label); inputs[key] = select;
-  }
-  details.append(grid);
-  const notes = el('textarea', undefined, 'result-notes');
-  notes.placeholder = '记下错读、停顿或喜欢的地方…'; notes.maxLength = 2000;
-  notes.setAttribute('aria-label', '听感笔记');
-  notes.value = mode.drafts[run.id]?.notes ?? run.scores?.notes ?? '';
-  details.append(notes);
-  const actions = el('div', undefined, 'score-actions');
-  const status = el('span', run.scores ? '已保存' : '');
-  const save = button('保存评分', 'secondary', async () => {
-    if (Object.values(inputs).some(x => !x.value)) { status.textContent = '请完成四项评分'; return; }
-    save.disabled = true;
-    try {
-      const data = await api(`/api/runs/${run.id}/score`, {method: 'POST', body: JSON.stringify({
-        ...Object.fromEntries(Object.entries(inputs).map(([key, input]) => [key, Number(input.value)])), notes: notes.value})});
-      run.scores = data.scores; mode.drafts[run.id] = data.scores; status.textContent = '已保存';
-    } catch (error) { status.textContent = error.message; }
-    finally { save.disabled = false; }
-  });
-  actions.append(save, status); details.append(actions); card.append(details);
+  return {queued: '排队中', running: '正在合成', failed: '生成失败', interrupted: '已中断'}[state] || state;
 }
 function renderResults() {
   if (!isStudioView()) return;
   const mode = S[S.view], root = $('#results'), blind = mode.blind;
-  captureScores(mode);
   root.classList.toggle('comparison', S.view === 'compare');
   $('#results-section').hidden = !mode.runs.length;
-  $('#source-panel').hidden = !mode.runs.length;
-  $('#exports').hidden = !mode.runs.length;
+  $('#exports').hidden = !mode.runs.some(run => run.status === 'completed');
   if (!mode.runs.length) { root.replaceChildren(); return; }
   for (const old of Array.from(root.children)) if (!mode.order.includes(old.dataset.run)) old.remove();
-  $('#source-text').textContent = mode.runs[0].text;
   $('#download-batch').href = `/api/batches/${mode.batch}/download`;
+  const sequence = [...mode.runs].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const remaining = mode.variants.map((_, index) => index), labels = new Map();
+  for (const [index, run] of sequence.entries()) {
+    const match = remaining.find(slot => requestKey(run.text, [mode.variants[slot]]) === requestKey(run.text, [run]));
+    labels.set(run.id, (match ?? index) + 1);
+    if (match !== undefined) remaining.splice(remaining.indexOf(match), 1);
+  }
   mode.order.forEach((id, index) => {
     const run = mode.runs.find(x => x.id === id);
     if (!run) return;
     const existing = root.querySelector(`[data-run="${id}"]`);
-    if (existing && existing.dataset.status === run.status && existing.dataset.blind === String(blind)) return;
+    if (existing && existing.dataset.status === run.status && existing.dataset.blind === String(blind) && existing.dataset.scheme === String(labels.get(id))) return;
     const card = el('article', undefined, 'result-card');
-    Object.assign(card.dataset, {run: id, status: run.status, blind: String(blind)});
-    const head = el('h3', blind ? `声音 ${String.fromCharCode(65 + index)}` : run.provider_name);
-    if (blind || run.family === 'local') head.append(el('span', blind ? '身份隐藏' : '本地', 'badge'));
-    card.append(head);
-    const status = el('div', stateLabel(run.status), 'status');
-    status.dataset.state = run.status; status.setAttribute('role', 'status'); card.append(status);
+    Object.assign(card.dataset, {run: id, status: run.status, blind: String(blind), scheme: String(labels.get(id))});
+    if (S.view === 'compare') {
+      card.append(el('h3', blind ? `声音 ${String.fromCharCode(65 + index)}` : `方案 ${labels.get(id)}`));
+    }
+    if (run.status !== 'completed') {
+      const status = el('div', stateLabel(run.status), 'status');
+      status.dataset.state = run.status; status.setAttribute('role', 'status'); card.append(status);
+    }
     if (['failed', 'interrupted'].includes(run.status)) card.append(el('p', run.error, 'hint error'));
     if (run.status === 'completed') {
       const audio = el('audio'); audio.controls = true; audio.preload = 'metadata'; audio.src = apiUrl(`/api/runs/${id}/audio`);
-      audio.setAttribute('aria-label', blind ? `声音 ${String.fromCharCode(65 + index)}` : run.provider_name);
+      audio.setAttribute('aria-label', S.view === 'test' ? '试听音频' : blind ? `声音 ${String.fromCharCode(65 + index)}` : `方案 ${labels.get(id)}`);
+      audio.setAttribute('controlslist', 'nodownload');
       audio.onplay = () => {
         if (S.playback?.ids[S.playback.index] !== id) S.playback = null;
         document.querySelectorAll('audio').forEach(other => { if (other !== audio) other.pause(); });
@@ -459,12 +432,7 @@ function renderResults() {
         let metrics = `生成 ${run.elapsed_seconds} s · ${(run.bytes / 1024).toFixed(1)} KB`;
         if (run.duration_seconds != null) metrics += ` · 音频 ${run.duration_seconds} s · RTF ${run.real_time_factor}`;
         card.append(el('div', metrics, 'metrics'));
-        const details = el('details');
-        details.append(el('summary', '本次参数'), el('pre', JSON.stringify(run.params, null, 2))); card.append(details);
-        const download = el('a', '下载音频 ↓', 'download');
-        download.href = `/api/runs/${id}/audio`; download.download = ''; card.append(download);
       }
-      if (run.family !== 'demo') renderScores(card, run, mode);
     }
     if (existing) existing.replaceWith(card); else root.append(card);
   });
@@ -513,7 +481,7 @@ async function poll(view, batch) {
     modeNotice(view, `${error.message} 已停止查询，可从历史记录查看任务状态。请确认后再重新生成。`, true);
   }
   S.busy = false; S.activeMode = ''; renderVariants();
-  if ($('#history-panel').open) void history();
+  void history(1);
 }
 async function listen() {
   if (S.busy || S.updating || C.saving || S.saving || !isStudioView()) return;
@@ -560,43 +528,62 @@ async function listen() {
     }
   }
 }
-async function history() {
+async function history(page = H.page) {
+  const revision = ++H.revision;
+  $('#history-prev').disabled = true; $('#history-next').disabled = true;
   try {
-    const data = await api('/api/runs'), groups = new Map();
-    data.runs.forEach(run => {
-      if (!groups.has(run.batch_id)) groups.set(run.batch_id, []);
-      groups.get(run.batch_id).push(run);
-    });
+    const data = await api(`/api/history?page=${page}&page_size=${H.pageSize}`);
+    if (revision !== H.revision) return;
+    H.page = data.page;
     const root = $('#history'); root.replaceChildren();
-    if (!groups.size) root.append(el('p', '还没有记录。', 'hint'));
-    groups.forEach((runs, id) => {
+    if (!data.batches.length) root.append(el('p', '还没有记录。', 'hint'));
+    data.batches.forEach(({runs, batch_id: id}) => {
       const row = el('div', undefined, 'history-row'), desc = el('div');
+      row.dataset.batch = id;
       desc.append(el('b', `${new Date(runs[0].created_at).toLocaleString()} · ${runs.length} 组`),
         el('p', runs[0].text.slice(0, 65) + (runs[0].text.length > 65 ? '…' : '')));
       const open = button('打开', 'secondary', () => {
         if (S.busy || S.updating) return;
         const view = runs.length === 1 ? 'test' : 'compare', mode = S[view];
-        // showView captures the active editor before switching. Replace its
-        // text first when reopening history in that same view.
         if (S.view === view) $('#text').value = runs[0].text;
         mode.text = runs[0].text;
         if (runs.every(run => provider(run.provider))) {
           mode.variants = [...runs].sort((a, b) => a.created_at.localeCompare(b.created_at))
             .map(run => makeVariant(run.provider, run.params));
         }
-        // Retired providers (including legacy tone fixtures) stay playable;
-        // do not add an unavailable service to the parameter picker.
         mode.message = ''; mode.error = false; mode.autoplay = false;
         mode.runs = runs; mode.batch = id; mode.order = shuffle(runs.map(run => run.id));
-        $('#history-panel').open = false; showView(view);
+        showView(view);
         $('#results-section').scrollIntoView({behavior: 'smooth'});
         if (runs.some(run => ['queued', 'running'].includes(run.status))) {
           S.busy = true; S.activeMode = view; renderVariants(); setTimeout(() => poll(view, id), 800);
         }
       });
-      open.disabled = S.busy; row.append(desc, open); root.append(row);
+      open.disabled = S.busy || S.updating; row.append(desc, open); root.append(row);
     });
-  } catch (error) { $('#history').replaceChildren(el('p', error.message, 'hint error')); }
+    $('#history-pagination').hidden = data.total_pages <= 1;
+    $('#history-page').textContent = `${data.page} / ${data.total_pages}`;
+    $('#history-prev').disabled = data.page <= 1;
+    $('#history-next').disabled = data.page >= data.total_pages;
+  } catch (error) {
+    if (revision !== H.revision) return;
+    $('#history').replaceChildren(el('p', error.message, 'hint error'));
+    $('#history-pagination').hidden = true;
+  }
+}
+async function refreshRetainedHistory() {
+  void history(1);
+  for (const mode of [S.test, S.compare]) {
+    if (!mode.runs.length || mode.runs.some(run => ['queued', 'running'].includes(run.status))) continue;
+    try { await api(`/api/runs/${mode.runs[0].id}`); }
+    catch (error) {
+      // A shorter retention period can remove the currently loaded result.
+      // Preserve the editable draft, while discarding only an expired player.
+      if (!error.message.includes('找不到记录')) continue;
+      mode.runs = []; mode.batch = ''; mode.order = [];
+    }
+  }
+  if (isStudioView()) renderResults();
 }
 function renderCloudModels() { renderServices(); }
 async function modelAction(id, action) {
@@ -689,7 +676,9 @@ async function init() {
       S[S.view].blind = $('#blind').checked;
       $('#blind-hint').hidden = !$('#blind').checked; renderResults();
     };
-    $('#history-panel').ontoggle = () => { if ($('#history-panel').open) void history(); };
+    $('#history-prev').onclick = () => void history(H.page - 1);
+    $('#history-next').onclick = () => void history(H.page + 1);
+    setupPreferences();
     $('#cancel-save').onclick = () => $('#save-dialog').close();
     $('#save-dialog').oncancel = event => { if (S.saveTarget?.saving) event.preventDefault(); };
     $('#save-form').onsubmit = event => { event.preventDefault(); void savePreset(S.saveTarget, $('#preset-name').value); };

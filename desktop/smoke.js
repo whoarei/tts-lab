@@ -47,6 +47,14 @@ window.addEventListener('DOMContentLoaded', async () => {
     await wait(async () => (await window.ttsDesktop.getWindowState()).maximized, 'Maximize failed');
     await window.ttsDesktop.toggleMaximize();
     checks.push('native window controls');
+    document.querySelector('[data-view=settings]').click();
+    await wait(() => !document.querySelector('#history-retention-days').disabled, 'Preferences did not load');
+    document.querySelector('#history-retention-days').value = '90';
+    document.querySelector('#save-preferences').click();
+    await wait(() => document.querySelector('#preferences-status').textContent === '已保存', 'Preferences did not save');
+    assert((await (await api('/api/settings')).json()).history_retention_days === 90, 'Preferences persistence failed');
+    document.querySelector('[data-view=test]').click();
+    checks.push('settings page and protected preference persistence');
     const savedResponse = await fetch(window.ttsDesktop.apiUrl('/api/presets'), {
       method: 'POST', headers: {'Content-Type': 'application/json', 'X-Local-Token': state.token},
       body: JSON.stringify({name: 'Native smoke preset', provider: 'openai', params: {}}),
@@ -63,13 +71,16 @@ window.addEventListener('DOMContentLoaded', async () => {
       assert(response.status === 202, 'Offline fixture submission failed');
       const batch = await response.json();
       await wait(async () => (await Promise.all(batch.runs.map(async r => (await (await api('/api/runs/' + r.id)).json()).status))).every(s => s === 'completed'), 'Offline fixtures incomplete');
-      document.querySelector('#history-panel').open = true;
+      document.querySelector('[data-view=test]').click();
+      assert(document.querySelector('#history-panel').tagName === 'SECTION', 'History must stay expanded');
       await wait(() => Array.from(document.querySelectorAll('.history-row')).some(row => row.textContent.includes(text)), 'Inline history did not load');
       Array.from(document.querySelectorAll('.history-row')).find(row => row.textContent.includes(text)).querySelector('button').click();
       await wait(() => document.querySelectorAll('#results audio').length === variants.length, 'Historical audio did not load');
     };
     await openDemo('native-single-fixture', [{provider: 'demo'}]);
     await openDemo('native-compare-fixture', [{provider: 'demo'}, {provider: 'demo', params: {frequency: 660}}]);
+    assert(!document.querySelector('#results .status, #results pre, .rating, .download, #source-panel'), 'Completed playback contains redundant controls');
+    assert(document.querySelectorAll('#exports a').length === 1 && document.querySelector('#download-batch').textContent === '下载音频', 'Expected one ZIP download control');
     const audio = document.querySelector('#results audio');
     audio.muted = true;
     await wait(() => audio.readyState >= 1 && audio.duration === 1.5, 'Audio protocol metadata failed');

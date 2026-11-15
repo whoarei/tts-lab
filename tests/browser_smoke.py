@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import zipfile
 
 import httpx
 
@@ -77,6 +78,23 @@ def check_ui(origin, data_dir):
         page = browser.new_page(viewport={'width': 1440, 'height': 1000})
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
+
+        def page_history(direction):
+            previous = page.locator('#history-page').inner_text()
+            page.click('#history-' + direction)
+            page.wait_for_function('(previous) => document.querySelector("#history-page").textContent !== previous', arg=previous)
+
+        def open_history_batch(batch_id):
+            while page.locator('#history-prev').is_enabled():
+                page_history('prev')
+            for _ in range(10):
+                row = page.locator(f'.history-row[data-batch="{batch_id}"]')
+                if row.count():
+                    row.locator('button').click()
+                    return
+                assert page.locator('#history-next').is_enabled(), f'Missing historical batch {batch_id}'
+                page_history('next')
+            raise AssertionError(f'Historical batch was not reachable: {batch_id}')
         page.goto(origin)
         page.wait_for_selector('body[data-ready="true"]')
         assert page.locator('.variant').count() == 1
@@ -144,12 +162,13 @@ def check_ui(origin, data_dir):
         page.wait_for_function('() => !document.querySelector("#generate").disabled')
         assert page.locator('audio').get_attribute('src') == original_audio
         assert len(page.request.get(origin + '/api/runs').json()['runs']) == 2
-        page.click('.rating summary')
-        for select in page.locator('.score-grid select').all():
-            select.select_option('4')
-        page.fill('.result-notes', '试听笔记')
-        page.click('.score-actions button')
-        page.wait_for_function('() => document.querySelector(".score-actions span").textContent === "已保存"')
+        # Completed results expose just playback and the batch ZIP action.
+        assert page.locator('.result-card[data-status="completed"]').count() == 1
+        assert page.locator('.result-card h3, .result-card .status, .result-card pre, .rating, .score-grid, .result-notes, .score-actions, #source-panel, .download').count() == 0
+        assert page.locator('#download-batch').inner_text() == '下载音频'
+        assert 'secondary' in page.locator('#download-batch').get_attribute('class').split()
+        assert page.locator('#exports a, #exports button').count() == 1
+        assert page.locator('a[href="/api/export.csv"]').count() == 0
         page.click('[data-view="compare"]')
         assert page.locator('.variant').count() == 2
         assert page.locator('audio').count() == 0
@@ -157,7 +176,6 @@ def check_ui(origin, data_dir):
         assert speed.input_value() == '1.2'
         assert voice.input_value() == '19'
         assert page.locator('audio').count() == 1
-        assert page.locator('.result-notes').input_value() == '试听笔记'
         # Save updates the selected preset; save-as creates an independent copy.
         page.click('.save-preset')
         page.wait_for_function('() => document.querySelector(".preset-status").textContent === "已保存"')
@@ -196,8 +214,24 @@ def check_ui(origin, data_dir):
         page.fill('#text', '')
         page.click('#generate')
         assert '输入' in page.locator('#notice').inner_text()
+        page.click('[data-view="settings"]')
+        assert page.locator('#settings-panel').is_visible()
+        page.wait_for_function('() => document.querySelector("#history-retention-days").value === "30"')
+        assert page.request.get(origin + '/api/settings').json()['history_retention_days'] == 30
+        assert page.locator('#preferences-expiry-hint').is_visible()
+        page.select_option('#history-retention-days', '0')
+        assert page.locator('#preferences-expiry-hint').is_hidden()
+        page.click('#save-preferences')
+        page.wait_for_function('() => document.querySelector("#preferences-status").textContent === "已保存"')
+        assert page.request.get(origin + '/api/settings').json()['history_retention_days'] == 0
+        page.reload(); page.wait_for_selector('body[data-ready="true"]')
+        page.click('[data-view="settings"]')
+        page.wait_for_function('() => document.querySelector("#history-retention-days").value === "0"')
+        assert page.locator('#preferences-expiry-hint').is_hidden()
+        page.screenshot(path=str(output / 'settings.png'), full_page=True)
+        page.click('[data-view="test"]')
         page.reload()
-        page.wait_for_selector('.variant')
+        page.wait_for_selector('body[data-ready="true"]')
         assert page.locator('.preset option').count() == 3
         page.locator('.preset').select_option(original_id)
         assert speed.input_value() == '1.2'
@@ -223,29 +257,102 @@ def check_ui(origin, data_dir):
         page.click('[data-view="models"]')
         page.click('[data-view="compare"]')
         assert page.locator('.variant .preset').first.input_value() == copy_id
+        comparison_expected = page.locator('.variant').evaluate_all('''(cards) => cards.map(card => ({
+            provider: card.querySelector('.provider').value,
+            params: Object.fromEntries(Array.from(card.querySelectorAll('[data-param]')).map(input =>
+                [input.dataset.param, input.type === 'checkbox' ? input.checked :
+                    input.type === 'number' ? Number(input.value) : input.value]))
+        }))''')
         page.click('#generate')
         page.wait_for_function('() => document.querySelectorAll("audio").length === 2 && !document.querySelector("#generate").disabled')
-        assert page.locator('.download').count() == 0
-        page.locator('.rating summary').first.click()
-        page.locator('.result-notes').first.fill('保留盲听笔记')
+        assert page.locator('#results h3').all_text_contents() == ['声音 A', '声音 B']
+        assert 'Kokoro' not in page.locator('#results').inner_text()
+        assert page.locator('.download, .rating, .score-grid, .result-notes, .score-actions, #source-panel, .result-card pre').count() == 0
         page.uncheck('#blind')
-        assert page.locator('.download').count() == 2
-        assert page.locator('.result-notes').first.input_value() == '保留盲听笔记'
+        assert sorted(page.locator('#results h3').all_text_contents()) == ['方案 1', '方案 2']
+        assert 'Kokoro' not in page.locator('#results').inner_text()
+        assert page.locator('.result-card[data-status="completed"] .status').count() == 0
+        assert page.locator('#download-batch').inner_text() == '下载音频'
+        assert page.locator('#exports a, #exports button').count() == 1
         with page.expect_download() as download:
             page.click('#download-batch')
-        download.value.save_as(str(output / 'batch.zip'))
+        batch_file = output / 'batch.zip'
+        download.value.save_as(str(batch_file))
+        with zipfile.ZipFile(batch_file) as archive:
+            records = json.loads(archive.read('results.json'))
+            assert len(records) == 2
+            assert sorted(json.dumps({key: run[key] for key in ('provider', 'params')}, sort_keys=True) for run in records) == sorted(json.dumps(item, sort_keys=True) for item in comparison_expected)
+            audio_names = [name for name in archive.namelist() if name.endswith('/audio.wav')]
+            assert len(audio_names) == 2
+            assert all(archive.read(name).startswith(b'RIFF') for name in audio_names)
+        # Reordering the two editor configurations must reuse their existing
+        # audio while relabelling each result to its current editor position.
+        labels_before = {card.get_attribute('data-run'): card.locator('h3').inner_text()
+                         for card in page.locator('.result-card').all()}
+        count_before_swap = len(page.request.get(origin + '/api/runs').json()['runs'])
+        page.locator('.variant').first.locator('.provider').select_option(comparison_expected[1]['provider'])
+        page.locator('.variant').nth(1).locator('.preset').select_option(copy_id)
+        comparison_expected.reverse()
+        page.click('#generate')
+        page.wait_for_function('() => !document.querySelector("#generate").disabled')
+        assert len(page.request.get(origin + '/api/runs').json()['runs']) == count_before_swap
+        expected_positions = {json.dumps(item, sort_keys=True): index + 1
+                              for index, item in enumerate(comparison_expected)}
+        expected_by_run = {run['id']: expected_positions[json.dumps(
+            {key: run[key] for key in ('provider', 'params')}, sort_keys=True)] for run in records}
+        assert {card.get_attribute('data-run') for card in page.locator('.result-card').all()} == set(expected_by_run)
+        for card in page.locator('.result-card').all():
+            run_id = card.get_attribute('data-run')
+            scheme = expected_by_run[run_id]
+            assert card.get_attribute('data-scheme') == str(scheme)
+            assert card.locator('h3').inner_text() == f'方案 {scheme}'
+            assert card.locator('audio').get_attribute('aria-label') == f'方案 {scheme}'
+            assert card.locator('h3').inner_text() != labels_before[run_id]
+        page.screenshot(path=str(output / 'results.png'), full_page=True)
         recent = page.request.get(origin + '/api/runs').json()['runs']
         comparison_runs = sorted((run for run in recent if run['batch_id'] == recent[0]['batch_id']),
                                  key=lambda run: run['created_at'])
         presets_before_history = page.request.get(origin + '/api/presets').json()['presets']
+        token = page.request.get(origin + '/api/state').json()['token']
+        headers = {'X-Local-Token': token}
+        seeded_batches = []
+        for number in range(10):
+            response = page.request.post(origin + '/api/batches', headers=headers, data={
+                'text': f'历史分页样例 {number + 1}',
+                'variants': [{'provider': 'local_kokoro', 'params': {'voice': number}}]})
+            assert response.status == 202, response.text()
+            seeded_batches.append(response.json()['batch_id'])
+        for _ in range(50):
+            if all(run['status'] == 'completed' for run in page.request.get(origin + '/api/runs').json()['runs']):
+                break
+            time.sleep(.1)
+        else:
+            raise AssertionError('Synthetic pagination fixtures did not finish')
+        page.click('[data-view="compare"]')
+        page.wait_for_function('() => document.querySelectorAll(".history-row").length === 10')
+        assert page.locator('#history-panel').evaluate('(node) => node.tagName') == 'SECTION'
+        assert page.locator('#history-panel').is_visible()
+        assert page.locator('#history-panel > summary').count() == 0
+        first_page_batches = page.locator('.history-row').evaluate_all('(rows) => rows.map(row => row.dataset.batch)')
+        assert set(first_page_batches) == set(seeded_batches)
+        assert page.locator('#history-prev').is_disabled() and page.locator('#history-next').is_enabled()
+        page_history('next')
+        page.wait_for_function('() => document.querySelectorAll(".history-row").length === 4')
+        second_page_batches = page.locator('.history-row').evaluate_all('(rows) => rows.map(row => row.dataset.batch)')
+        assert not set(first_page_batches) & set(second_page_batches)
+        assert comparison_runs[0]['batch_id'] in second_page_batches
+        assert page.locator('#history-prev').is_enabled() and page.locator('#history-next').is_disabled()
+        second_page = page.request.get(origin + '/api/history?page=2&page_size=10').json()
+        assert second_page['page'] == 2 and second_page['page_size'] == 10
+        assert second_page['total'] == 14 and second_page['total_pages'] == 2
+        full_comparison = next(batch['runs'] for batch in second_page['batches'] if batch['batch_id'] == comparison_runs[0]['batch_id'])
+        assert {run['id'] for run in full_comparison} == {run['id'] for run in comparison_runs}
+        page.screenshot(path=str(output / 'history-page-2.png'), full_page=True)
         # Opening history replaces the current text and editor settings, without
         # attaching the restored draft to a saved preset or changing its files.
         page.fill('#text', '这些是尚未保存的编辑内容。')
         page.locator('.variant .provider').first.select_option('local_qwen3')
-        page.click('#history-panel > summary')
-        page.wait_for_selector('.history-row')
-        assert page.locator('.history-row').count() == 4
-        page.locator('.history-row button').last.click()
+        open_history_batch(original_run['batch_id'])
         assert page.locator('#page-title').inner_text() == '文本测试'
         assert page.locator('audio').count() == 1
         assert page.locator('#text').input_value() == original_run['text']
@@ -256,13 +363,12 @@ def check_ui(origin, data_dir):
         speed.fill('1.7')
         page.click('[data-view="about"]')
         page.click('[data-view="test"]')
-        assert json.loads(page.locator('.result-card pre').first.text_content())['speed'] == original_run['params']['speed']
+        assert page.locator('.result-card').first.get_attribute('data-run') == original_run['id']
+        assert page.locator('.result-card pre').count() == 0
         assert page.request.get(origin + '/api/runs/' + original_run['id']).json()['params'] == original_run['params']
         page.click('[data-view="compare"]')
         assert page.locator('#text').input_value() == '这些是尚未保存的编辑内容。'
-        page.click('#history-panel > summary')
-        page.wait_for_selector('.history-row')
-        page.locator('.history-row button').first.click()
+        open_history_batch(comparison_runs[0]['batch_id'])
         assert page.locator('#page-title').inner_text() == '方案对比'
         assert page.locator('#text').input_value() == comparison_runs[0]['text']
         assert page.locator('.variant .provider').evaluate_all('(nodes) => nodes.map(n => n.value)') == [run['provider'] for run in comparison_runs]
@@ -308,7 +414,7 @@ def check_ui(origin, data_dir):
         assert len(page.request.get(origin + '/api/runs').json()['runs']) == before
         for width, height in [(1280, 800), (880, 700), (390, 844)]:
             page.set_viewport_size({'width': width, 'height': height})
-            for view in ['test', 'compare', 'models', 'about']:
+            for view in ['test', 'compare', 'models', 'settings', 'about']:
                 page.click(f'[data-view="{view}"]')
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), (width, view)
                 if width == 390:
@@ -319,8 +425,7 @@ def check_ui(origin, data_dir):
         assert response.ok
         page.reload(); page.wait_for_selector('body[data-ready="true"]')
         assert page.locator('.provider').input_value() == 'local_qwen3'
-        page.click('#history-panel > summary'); page.wait_for_selector('.history-row')
-        page.locator('.history-row button').last.click()
+        open_history_batch(original_run['batch_id'])
         assert page.locator('.provider').input_value() == 'local_kokoro'
         assert page.locator('.provider option:checked').evaluate('(node) => node.disabled')
         assert page.locator('[data-param="model"]').input_value() == 'kokoro-v1.1'
@@ -381,7 +486,7 @@ def check_ui(origin, data_dir):
         assert '模拟云端请求已接收' in page.locator('#notice').inner_text()
         assert not errors, errors
         print('UI passed: optional presets, save/update/save-as, draft-only synthesis, automatic playback, '
-              'cache reuse after edits/reload, score retention, view isolation, blind reveal, ZIP, inline history, six-variant limit, '
+              'cache reuse after edits/reload/reordering, editor-linked comparison labels, minimal playback results, view isolation, blind reveal, parameter ZIP, paginated history, retention settings, six-variant limit, '
               'ready service/model filtering, unavailable history replay, empty/configured states, desktop/mobile; no JS errors or cloud/model calls.')
         browser.close()
 

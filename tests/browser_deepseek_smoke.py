@@ -139,10 +139,9 @@ def main():
                 audio = page.locator('#results audio')
                 page.wait_for_function("() => document.querySelector('#results audio').currentTime > 0")
                 audio.evaluate('(node) => node.pause()')
-                with page.expect_download() as download:
-                    page.click('#results .download')
-                wav = output / 'tts-deepseek-mock.wav'
-                download.value.save_as(str(wav)); check_wav(wav.read_bytes())
+                assert page.locator('#results .result-card h3, #results .status, #results pre, .rating, #source-panel, .download').count() == 0
+                assert page.locator('#exports a').count() == 1
+                assert page.locator('#download-batch').inner_text() == '下载音频'
                 with page.expect_download() as download:
                     page.click('#download-batch')
                 single = output / 'tts-deepseek-single.zip'
@@ -154,20 +153,22 @@ def main():
                 page.wait_for_function("() => document.querySelectorAll('#results audio').length === 2 && !document.querySelector('#generate').disabled")
                 assert len(submissions[-1]['variants']) == 2 and submissions[-1]['allow_cloud'] is True
                 page.uncheck('#blind')
-                assert page.locator('#results .download').count() == 2
+                assert sorted(page.locator('#results h3').all_inner_texts()) == ['方案 1', '方案 2']
+                assert page.locator('#results .status, #results pre, .rating, .download').count() == 0
                 with page.expect_download() as download:
                     page.click('#download-batch')
                 compare = output / 'tts-deepseek-compare.zip'
                 download.value.save_as(str(compare)); check_zip(compare, [('tide', False), ('stella', True)])
-                with page.expect_download() as download:
-                    page.click('#exports a[href="/api/export.csv"]')
-                csv_file = output / 'tts-deepseek-results.csv'
-                download.value.save_as(str(csv_file))
-                rows = list(csv.DictReader(io.StringIO(csv_file.read_text(encoding='utf-8-sig'))))
+                # CSV remains a supported API export without a redundant UI link.
+                csv_response = page.request.get(origin + '/api/export.csv')
+                assert csv_response.ok
+                rows = list(csv.DictReader(io.StringIO(csv_response.body().decode('utf-8-sig'))))
                 assert len(rows) == 3 and all(row['provider'] == 'deepseek' for row in rows)
                 requests = [json.loads(line) for line in calls_file.read_text().splitlines()]
                 assert len(requests) == 3 and sorted((item['voice_id'], item['filter_markdown']) for item in requests) == [('stella', True), ('tide', False), ('tide', False)]
                 assert not errors, errors
+                page.wait_for_function("() => [...document.querySelectorAll('#results audio')].every(audio => audio.readyState >= 1)")
+                page.evaluate('window.scrollTo(0, 0)')
                 page.screenshot(path=str(output / 'tts-deepseek-comparison.png'), full_page=True)
                 browser.close()
                 print('DeepSeek UI passed: defaults, voice/checkbox changes, presets/reload, direct listening, automatic playback, WAV/ZIP/CSV; 3 mocked PCM requests, no real cloud calls.')

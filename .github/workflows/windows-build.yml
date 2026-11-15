@@ -69,6 +69,8 @@ jobs:
           npm ci
           python scripts/prepare_frontend.py
           python -m pip install -r requirements.txt
+      - name: Check history retention and pagination on Windows
+        run: python -m unittest discover -s tests -p test_history.py -v
       - name: Test and compile Tauri desktop
         working-directory: src-tauri
         run: |
@@ -119,6 +121,7 @@ jobs:
           ./scripts/check_windows_updates.ps1 -Bundle "dist/TTS-Lab-$version-win-x64" -Installer "dist/TTS-Lab-$version-win-x64-setup.exe" -PortableZIP "dist/TTS-Lab-$version-win-x64.zip" -BaselineVersion '0.7.0'
           ./scripts/check_windows_updates.ps1 -Bundle "dist/TTS-Lab-$version-win-x64" -Installer "dist/TTS-Lab-$version-win-x64-setup.exe" -PortableZIP "dist/TTS-Lab-$version-win-x64.zip" -BaselineVersion '0.8.0'
           ./scripts/check_windows_updates.ps1 -Bundle "dist/TTS-Lab-$version-win-x64" -Installer "dist/TTS-Lab-$version-win-x64-setup.exe" -PortableZIP "dist/TTS-Lab-$version-win-x64.zip" -BaselineVersion '0.9.0'
+          ./scripts/check_windows_updates.ps1 -Bundle "dist/TTS-Lab-$version-win-x64" -Installer "dist/TTS-Lab-$version-win-x64-setup.exe" -PortableZIP "dist/TTS-Lab-$version-win-x64.zip" -BaselineVersion '0.10.0'
       - uses: actions/upload-artifact@v4
         with:
           name: TTS-Lab-Windows-x64
@@ -149,13 +152,11 @@ jobs:
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
           本次更新：
-          - 新增左侧“关于”页面，集中显示当前版本、发行类型和应用更新操作，并保留新版本提示与自动检查偏好。
-          - 检查、下载、安装和重试更新集中在“关于”；后台生成或安装模型时阻止应用更新，任务结束后恢复操作。
-          - 修复 API Key 输入框中原生密码显示按钮与自定义小眼睛重复出现，保留一个显示/隐藏按钮。
-          - 修复历史记录只恢复播放器的问题：原文、服务、模型及完整参数同步恢复到编辑区，作为独立草稿，不覆盖已保存方案或历史快照。
-          - 语音服务仅可选已配置且就绪的云服务、已安装可用的本地引擎，本地模型子列表仅可选已安装模型；没有可用服务时显示空状态。
-          - 修复模型状态刷新导致云服务卡片键盘焦点丢失的问题。
-          - 保留直接试听、音频复用、全部语音服务、本地模型、参考录音和个人数据。
+          - 精简试听结果，移除重复原文、服务名称、完成状态、参数详情、评分与笔记入口；保留播放器和运行指标。
+          - 下载统一为“下载音频”按钮，仍保存本轮音频与参数 ZIP；移除单段下载和历史 CSV 入口。
+          - 历史记录直接展示，每页 10 次试听，整轮对比不会拆页；打开历史仍同步恢复文本、模型和参数。
+          - 新增“设置”页，历史默认保留 30 天，可选择其他期限或永久保留；到期清理记录和音频，保留方案、凭证、模型及参考录音。
+          - 保留直接试听与已有音频复用、可用模型筛选、关于页与在线更新。
           - 验证使用合成音频和官方契约模拟请求，没有发起真实付费语音调用。
 
           下载与安装：
@@ -163,10 +164,10 @@ jobs:
           - win-x64.zip：完整解压后运行 TTS Lab.exe，需已安装 Microsoft WebView2 Evergreen Runtime；保留旁边所有文件。
           - 两种版本均包含 Python 和应用依赖；本地人声模型与推理环境按需另行下载，升级保留个人配置和历史。
           - exe.sha256 / zip.sha256：对应下载文件的 SHA256 校验值。
-          - 0.7.0、0.8.0、0.8.1、0.9.0 用户可从原有“应用更新”入口升级；0.10.0 起入口位于“关于”。已发布的 0.6.0 需要手动安装本版本一次。
+          - 0.7.0、0.8.0、0.8.1、0.9.0、0.10.0 用户可从原有“应用更新”入口升级；0.10.0 起入口位于“关于”。已发布的 0.6.0 需要手动安装本版本一次。
           - 更新源为本项目 GitHub Release，使用 HTTPS 与 SHA256；当前发布渠道没有独立更新签名。
 
-          验证：Windows 工作流执行 Rust 测试、Tauri release 编译、安装器编译、锁定依赖及包完整性校验，使用包内 Python 验证后端、DeepSeek 模拟 PCM 合成、离线 WAV 和参考录音存储，并执行原生凭证弹窗、输入可见性和保存后不回显检查。更新回归使用已发布 0.6.0、0.7.0、0.8.0 和 0.9.0 的安装版与便携包，0.7.0 及之后的基线使用各自已发布的更新程序，0.6.0 使用候选更新程序，检查升级、完整载荷与用户文件保留，以及无效包在开始替换前的拒绝。真实云端调用、完整 GPU 推理及交互式安装体验仍需单独验证。云端调用可能收费；离线测试音不是人声。应用未做代码签名。
+          验证：Windows 工作流执行 Rust 测试、Tauri release 编译、安装器编译、锁定依赖及包完整性校验，使用包内 Python 验证后端、DeepSeek 模拟 PCM 合成、离线 WAV 和参考录音存储，并执行原生凭证弹窗、输入可见性和保存后不回显检查。更新回归使用已发布 0.6.0、0.7.0、0.8.0、0.9.0 和 0.10.0 的安装版与便携包，0.7.0 及之后的基线使用各自已发布的更新程序，0.6.0 使用候选更新程序，检查升级、完整载荷与用户文件保留，以及无效包在开始替换前的拒绝。真实云端调用、完整 GPU 推理及交互式安装体验仍需单独验证。云端调用可能收费；离线测试音不是人声。应用未做代码签名。
           NOTES
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists; refusing to replace published assets." >&2
