@@ -1,7 +1,7 @@
 {
   "version": "0.10.0",
   "checked_on": "2026-11-15",
-  "development_status": "PREPARED: local parallel regression passed; final 0.10.0 native Windows and publication checks pending.",
+  "development_status": "PUBLISHED: v0.10.0 tag workflow and offline CI passed; Latest release assets independently downloaded and verified.",
   "target": "Windows 10/11 x64 per-user installer and portable folder",
   "bundled_runtime": {
     "desktop": "Tauri 2.12.5 (system WebView2 on Windows)",
@@ -12,34 +12,34 @@
   "checks": {
     "python_unittest": "PASS: 109 tests, 108 passed and 1 local NSIS test skipped (compiler unavailable); provider mocks, persistence, credentials, references and packaging.",
     "desktop_adapter_tests": "PASS: 10/10 Node bridge tests.",
-    "rust_checks": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
+    "rust_checks": "PASS: 31/31 Rust tests on native Windows/MSVC; final tag workflow 43729753976.",
     "javascript_syntax": "PASS: app.js, settings.js, desktop.js and desktop/smoke.js.",
     "browser_smoke": "PASS: extended availability/core/history, credential focus/visibility, DeepSeek mocked PCM and Tauri bridge/About/update suites; empty state, installed model filtering, cached unavailable-history playback and live credential configuration; no real cloud/model calls.",
-    "windows_tauri_build": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
-    "windows_bundled_backend": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
-    "windows_desktop_smoke": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
-    "windows_native_install_upgrade_uninstall": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
+    "windows_tauri_build": "PASS: locked Tauri release build, installer and portable packaging; final tag workflow 43729753976.",
+    "windows_bundled_backend": "PASS: embedded Python, isolated imports, offline WAV/reference storage and mocked DeepSeek PCM contract; final tag workflow 43729753976.",
+    "windows_desktop_smoke": "PASS: actual WebView2 About/version/update state, empty ready-service picker, credential dialog, window controls, binary reference upload, named-preset persistence, inline history, muted audio playback and native exports; final tag workflow 43729753976.",
+    "windows_native_install_upgrade_uninstall": "PASS: setup, reinstall, Electron upgrade, uninstall and user-file preservation; final tag workflow 43729753976.",
     "real_cloud_requests": "NOT RUN: DeepSeek and other paid/cloud endpoints mocked; no provider credentials used",
     "app_code_signing": "NOT SIGNED: native application and setup are not code signed",
-    "publication": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
-    "package_size": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
+    "publication": "PUBLISHED: https://github.com/whoarei/tts-lab/releases/tag/v0.10.0; four assets, confirmed Latest.",
+    "package_size": "MEASURED: setup 44680745 bytes; ZIP 56073175 bytes.",
     "local_kokoro": "PREVIOUS verification (2026-11-10): Linux CPU managed runtime, verified download and offline Chinese synthesis/playback/scoring/export. Not rerun for this UI/installer change",
     "local_qwen3": "PREVIOUS partial verification (2026-11-10): CPU dependencies/imports passed; full weights/inference not verified",
     "local_cosyvoice": "PREVIOUS partial verification (2026-11-10): CPU dependencies/imports passed; full weights/inference not verified",
     "local_indextts": "PASS in preceding source verification: complete verified weights/aux downloads, installation trial and actual local API generation with reference SHA256; Linux CPU, 3.947-second PCM16 WAV",
     "local_glmtts": "PARTIAL: official source and runtime imports passed; full GPU inference NOT RUN (no NVIDIA GPU)",
     "local_gpu": "NOT RUN: no NVIDIA GPU available",
-    "windows_msvc_cross_check": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
-    "artifact_integrity": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
+    "windows_msvc_cross_check": "PASS: superseded by native Windows build and tests for this tag.",
+    "artifact_integrity": "PASS: both SHA256 sidecars, GitHub asset digests, ZIP CRC, all 2843 payload hashes, packaged backend source and 27 locked Python distributions.",
     "webview2_missing_runtime_install": "NOT RUN: runner already had WebView2; first-time runtime bootstrapper installation and runtime-download failure behavior still require a suitable Windows host",
     "interactive_windows_checks": "NOT RUN: interactive install wizard, Save As dialog selection, actual speaker output, SmartScreen experience and replacing an application while running; native audio smoke uses muted playback",
-    "windows_online_update_apply": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
-    "update_transport": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
-    "update_ui": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
-    "windows_online_update_candidate": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
-    "deepseek_packaged_backend": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
-    "linux_rust": "NOT RUN locally: Rust toolchain unavailable; unchanged Rust logic will be tested by the required native Windows workflow.",
-    "windows_ci": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
+    "windows_online_update_apply": "PASS: installed and portable upgrades from 0.6.0, 0.7.0, 0.8.0 and 0.9.0 using original published helpers for 0.7.0/0.8.0/0.9.0 and the candidate helper for pre-updater 0.6.0, complete payload verification and rejected-package preservation; final tag workflow 43729753976.",
+    "update_transport": "PASS: fixed HTTPS and SHA256 validation regression, native helper application and independently downloaded release assets.",
+    "update_ui": "PASS: browser bridge progress/retry, install/busy guards, daily opt-out, and native update state/offline-operation boundary.",
+    "windows_online_update_candidate": "PASS: all baseline upgrade suites; final tag workflow 43729753976.",
+    "deepseek_packaged_backend": "PASS: mocked official PCM contract in Windows embedded Python; no real cloud requests.",
+    "linux_rust": "NOT RUN locally: Rust unavailable; final native Windows workflow passed all 31 tests.",
+    "windows_ci": "PASS: final tag workflow 43729753976.",
     "credential_reveal_visual": "Native WebView2 reveal hidden via a scoped ::-ms-reveal rule; custom accessible toggle/masking/no stored-key readback verified. Manual Windows visual inspection not performed.",
     "configuration_focus": "PASS: old renderServices replacement deterministically reproduced lost focus; keyed card reuse preserves focused card and dialog input during refresh. Initial readiness now waits for body data-ready."
   },
@@ -264,10 +264,10 @@
     "previous_release": "0.9.0",
     "target_tag": "v0.10.0",
     "intended_release_url": "https://github.com/whoarei/tts-lab/releases/tag/v0.10.0",
-    "status": "PREPARED: local checks passed; final Windows tag workflow will gate publication.",
-    "scope": "About/version/update page; single credential visibility control; history restores independent text/provider/model/parameter drafts; only configured ready cloud services and installed local models selectable; preserve keyboard focus during model-state refresh.",
+    "status": "PUBLISHED: final tag workflow and downloaded-asset verification passed.",
+    "scope": "About/version/update page, single credential visibility control, history parameter restoration, configured-and-ready service choices and installed-only local model choices, stable credential keyboard focus; preserve direct listening and audio reuse.",
     "runtime_changes": "No runtime or dependency upgrades.",
-    "real_cloud_requests": "none; synthetic audio and mocked providers only."
+    "real_cloud_requests": "none; synthetic audio and mocked provider contracts only."
   },
   "historical_published_releases": [
     {
@@ -361,6 +361,33 @@
       "offline_workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43584481703",
       "published_at": "2026-11-14T10:26:05Z",
       "latest": true
+    },
+    {
+      "version": "0.9.0",
+      "status": "passed",
+      "release_url": "https://github.com/whoarei/tts-lab/releases/tag/v0.9.0",
+      "tag_commit": "2bd04f65aa59895cb3b2bc4f81bf7351b35a4169",
+      "assets": {
+        "TTS-Lab-0.9.0-win-x64-setup.exe": 44673343,
+        "TTS-Lab-0.9.0-win-x64-setup.exe.sha256": 99,
+        "TTS-Lab-0.9.0-win-x64.zip": 56063884,
+        "TTS-Lab-0.9.0-win-x64.zip.sha256": 93
+      },
+      "sha256": {
+        "TTS-Lab-0.9.0-win-x64-setup.exe": "1abae4a31d793cdbfa360d3057a28b4d8ce47b17f9e69cb58e35bfffd808f21f",
+        "TTS-Lab-0.9.0-win-x64.zip": "d1e778681ed4d8925227c636f949eeafbfd098d330dba4e9f67fecd675f71f41"
+      },
+      "zip_crc": true,
+      "payload_hashes": 2843,
+      "python_distributions": 27,
+      "source_files_matched_to_tag": 15,
+      "source_comparison": "Exact packaged source text after CRLF/LF normalization.",
+      "installer_pe": true,
+      "executed_downloaded_binaries": false,
+      "workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43723839840",
+      "offline_workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43723787471",
+      "published_at": "2026-11-15T14:34:22Z",
+      "latest": true
     }
   ],
   "deepseek_tts_validation": {
@@ -381,7 +408,7 @@
     "packaged_smoke_script": "scripts/check_bundle_backend.py",
     "local_packaging_tests": "PASS: 4/4",
     "transport": "httpx.MockTransport only; default sync/async HTTP transports rejected by the smoke check",
-    "native_windows_packaged_python": "PASS: final tag workflow 43584499239.",
+    "native_windows_packaged_python": "PASS: final 0.10.0 tag workflow 43729753976.",
     "real_deepseek_service": "NOT RUN: no real API key or network call; mock success does not establish account/region/quota availability"
   },
   "credential_dialog_change": {
@@ -397,19 +424,19 @@
     "offline_workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43584481703"
   },
   "published_release": {
-    "version": "0.9.0",
+    "version": "0.10.0",
     "status": "passed",
-    "release_url": "https://github.com/whoarei/tts-lab/releases/tag/v0.9.0",
-    "tag_commit": "2bd04f65aa59895cb3b2bc4f81bf7351b35a4169",
+    "release_url": "https://github.com/whoarei/tts-lab/releases/tag/v0.10.0",
+    "tag_commit": "178fdc61db3be4febadc9565d95a6f777880ec50",
     "assets": {
-      "TTS-Lab-0.9.0-win-x64-setup.exe": 44673343,
-      "TTS-Lab-0.9.0-win-x64-setup.exe.sha256": 99,
-      "TTS-Lab-0.9.0-win-x64.zip": 56063884,
-      "TTS-Lab-0.9.0-win-x64.zip.sha256": 93
+      "TTS-Lab-0.10.0-win-x64-setup.exe": 44680745,
+      "TTS-Lab-0.10.0-win-x64-setup.exe.sha256": 100,
+      "TTS-Lab-0.10.0-win-x64.zip": 56073175,
+      "TTS-Lab-0.10.0-win-x64.zip.sha256": 94
     },
     "sha256": {
-      "TTS-Lab-0.9.0-win-x64-setup.exe": "1abae4a31d793cdbfa360d3057a28b4d8ce47b17f9e69cb58e35bfffd808f21f",
-      "TTS-Lab-0.9.0-win-x64.zip": "d1e778681ed4d8925227c636f949eeafbfd098d330dba4e9f67fecd675f71f41"
+      "TTS-Lab-0.10.0-win-x64-setup.exe": "e34b323878784fc9b26aa9f392d0cca9c85223df0dc1917cc551b04080eed5bd",
+      "TTS-Lab-0.10.0-win-x64.zip": "92041154358b2dfdb4eddcbb81f35893ab33ae9d76066fee965bd8c971051349"
     },
     "zip_crc": true,
     "payload_hashes": 2843,
@@ -418,9 +445,9 @@
     "source_comparison": "Exact packaged source text after CRLF/LF normalization.",
     "installer_pe": true,
     "executed_downloaded_binaries": false,
-    "workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43723839840",
-    "offline_workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43723787471",
-    "published_at": "2026-11-15T14:34:22Z",
+    "workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43729753976",
+    "offline_workflow_url": "https://github.com/whoarei/tts-lab/actions/runs/43729487917",
+    "published_at": "2026-11-15T15:39:37Z",
     "latest": true
   }
 }
