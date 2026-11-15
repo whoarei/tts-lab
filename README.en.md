@@ -8,7 +8,7 @@ TTS Lab is a text-to-speech workbench that runs on your computer. Enter text, ch
 
 ## Features
 
-- **Save and compare configurations**: Name and save configurations for repeated single-configuration tests. Compare up to 6 per batch, including different voices and settings from the same engine.
+- **Listen directly and save configurations**: Start from an optional preset or enter settings directly. Listen synthesizes and plays automatically, reuses matching completed audio, and supports save and save-as. Compare up to 6 per batch, including different voices and settings from the same engine.
 - **Cloud service adapters**: Integrates adapters for OpenAI, DeepSeek, Gemini, Qwen / DashScope, MiniMax, Xiaomi MiMo, ByteDance Doubao / Seed TTS, ElevenLabs, StepAudio, Fish Audio, Azure, Google Cloud TTS, and AWS Polly.
 - **Configure credentials in the interface**: Click a cloud service card to enter your own credentials. Changes take effect immediately after saving; saved keys are never displayed.
 - **Local model management**: Provides downloads and offline inference for Kokoro, Qwen3-TTS, CosyVoice, IndexTTS-2, and GLM-TTS, with installation cancellation and model deletion. IndexTTS-2 and GLM-TTS accept reference recordings; GLM-TTS also requires a transcript.
@@ -17,7 +17,7 @@ TTS Lab is a text-to-speech workbench that runs on your computer. Enter text, ch
 - **Generation metrics**: View generation time and file size. WAV output also provides audio duration and the real-time factor (RTF).
 - **Local history and exports**: Save text, settings, audio, and ratings locally. Revisit previous comparisons, download individual audio files, export a batch as ZIP, or export records as CSV.
 - **Desktop updates**: Check for and download updates in the app, then install and restart after verification. Personal settings, models, and history are preserved.
-- **Offline workflow demo**: Try playback and export with test tones without credentials. Test tones do not read the input text and cannot be used to evaluate speech quality.
+- **Minimal interface**: Sidebar navigation, matching editor heights and collapsible history. Non-speech test tones are reserved for automated verification.
 
 ## Screenshots
 

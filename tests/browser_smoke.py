@@ -1,155 +1,305 @@
-"""Offline UI integration: run.py on :8765; CHROMIUM_PATH selects system Chromium.
+"""Isolated browser regression, with synthetic audio instead of model/cloud calls.
 
-Uses only the demo provider. Screenshots/downloads go to TTS_LAB_SCREENSHOTS or /tmp.
+pip install playwright; playwright install chromium
+CHROMIUM_PATH=/usr/bin/chromium python tests/browser_smoke.py
+The temporary backend never reads .env or downloads models. Its Kokoro adapter
+returns a silent WAV fixture; these checks verify UI behavior, not TTS quality.
 """
-import json
-import io
 import os
 from pathlib import Path
-import wave
-import zipfile
-from playwright.sync_api import sync_playwright
+import socket
+import subprocess
+import sys
+import tempfile
+import time
 
-output = Path(os.environ.get('TTS_LAB_SCREENSHOTS', '/tmp'))
-output.mkdir(parents=True, exist_ok=True)
-with sync_playwright() as p:
-    launch = {'headless': True}
-    if os.getenv('CHROMIUM_PATH'):
-        launch['executable_path'] = os.environ['CHROMIUM_PATH']
-    browser = p.chromium.launch(**launch)
-    page = browser.new_page(viewport={'width': 1360, 'height': 960})
-    errors, submissions = [], []
-    page.on('pageerror', lambda error: errors.append(str(error)))
-    page.on('request', lambda request: submissions.append(request.post_data_json)
-            if request.method == 'POST' and request.url.endswith('/api/batches') else None)
-    page.goto('http://127.0.0.1:8765')
-    page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
-    assert page.locator('#page-test').is_visible()
-    assert not page.locator('#page-compare').is_visible()
-    assert not page.locator('#page-models').is_visible()
-    assert not page.locator('#window-controls').is_visible()
-    page.click('[data-page=compare]')
-    first = page.locator('.variant').first
-    for provider_id, credential in [('mimo', 'MIMO_API_KEY'), ('doubao', 'VOLCENGINE_TTS_API_KEY'),
-                                     ('stepfun', 'STEP_API_KEY'), ('fish', 'FISH_AUDIO_API_KEY'),
-                                     ('deepseek', 'DEEPSEEK_API_KEY')]:
-        first.locator('.provider').select_option(provider_id)
-        assert credential in first.inner_text()
-    first.locator('.provider').select_option('local_indextts')
-    buffer = io.BytesIO()
-    with wave.open(buffer, 'wb') as writer:
-        writer.setnchannels(1); writer.setsampwidth(2); writer.setframerate(24000)
-        writer.writeframes(b'\0\1' * 72000)
-    first.get_by_label('导入参考录音', exact=True).set_input_files({
-        'name': 'reference-test.wav', 'mimeType': 'audio/wav', 'buffer': buffer.getvalue()})
-    page.wait_for_function("() => document.querySelector('.variant [data-param=reference_id]').value.length === 32")
-    reference_id = first.locator('[data-param=reference_id]').input_value()
-    assert first.locator('audio').count() == 1
-    first.locator('.provider').select_option('local_glmtts')
-    first.locator('[data-param=reference_id]').select_option(reference_id)
-    first.locator('[data-param=reference_text]').fill('这是参考录音的逐字稿。')
-    page.locator('#coverage-note summary').click()
-    assert 'DeepSeek' in page.locator('#coverage-note').inner_text()
-    page.click('#save-variants')
-    page.wait_for_function("() => document.querySelector('#save-state').textContent === '已保存到本机'")
-    page.reload()
-    page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
-    page.click('[data-page=compare]')
-    assert first.locator('[data-param=reference_id]').input_value() == reference_id
-    assert first.locator('[data-param=reference_text]').input_value() == '这是参考录音的逐字稿。'
-    while page.locator('.variant').count() < 2:
-        page.click('#add-variant')
-    while page.locator('.variant').count() > 2:
-        page.locator('.remove-variant').last.click()
-    for index, variant in enumerate(page.locator('.variant').all()):
-        variant.locator('.provider').select_option('demo')
-        variant.locator('.variant-name').fill(['低频测试', '高频测试'][index])
-        variant.locator('[data-param=frequency]').fill(str([440, 660][index]))
-    page.click('#save-variants')
-    page.wait_for_function("() => document.querySelector('#save-state').textContent === '已保存到本机'")
-    page.click('[data-page=test]')
-    page.select_option('#test-variant', label='高频测试')
-    page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
-    selected_uid = page.locator('#test-variant').input_value()
-    assert '660' in page.locator('#selected-variant').inner_text()
-    page.reload()
-    page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
-    assert page.locator('#test-variant').input_value() == selected_uid
-    page.screenshot(path=str(output / 'tts-lab-text-test.png'), full_page=True)
-    page.fill('#text', '')
-    page.click('#test-generate')
-    assert '输入' in page.locator('#notice').inner_text()
-    page.fill('#text', '同一段文字，选择一个已保存方案进行测试。')
-    page.click('#test-generate')
-    page.click('[data-page=compare]')
-    assert page.locator('#compare-generate').is_disabled()
-    page.click('[data-page=test]')
-    page.wait_for_function("() => document.querySelectorAll('#test-results-slot audio').length === 1 && !document.querySelector('#test-generate').disabled")
-    assert len(submissions[-1]['variants']) == 1
-    assert submissions[-1]['variants'][0]['params']['frequency'] == 660
-    assert not submissions[-1]['allow_cloud']
-    audio = page.locator('#test-results-slot audio')
-    audio.evaluate('(audio) => audio.play()')
-    page.wait_for_function("() => document.querySelector('#test-results-slot audio').currentTime > 0")
-    audio.evaluate('(audio) => audio.pause()')
-    with page.expect_download() as info:
-        page.click('#test-results-slot .download-batch')
-    archive = output / 'tts-browser-batch.zip'
-    info.value.save_as(str(archive))
-    with zipfile.ZipFile(archive) as bundle:
-        runs = json.loads(bundle.read('results.json'))
-        assert len(runs) == 1 and runs[0]['params']['frequency'] == 660
-    page.click('#page-test .history-button')
-    page.wait_for_selector('.history-row')
-    page.locator('.history-row .secondary').first.click()
-    assert page.locator('#history-panel').is_hidden()
-    page.click('[data-page=compare]')
-    assert page.locator('#compare-text').input_value() == '同一段文字，选择一个已保存方案进行测试。'
-    page.click('#compare-generate')
-    page.wait_for_function("() => document.querySelectorAll('#compare-results-slot audio').length === 2 && !document.querySelector('#compare-generate').disabled")
-    assert len(submissions[-1]['variants']) == 2
-    assert '声音 A' in page.locator('#compare-results-slot').inner_text()
-    page.uncheck('#compare-results-slot .blind')
-    assert page.locator('#compare-results-slot .download').count() == 2
-    assert page.locator('#test-results-slot audio').count() == 1
-    page.click('#add-variant')
-    assert page.locator('.variant').count() == 3
-    page.locator('.remove-variant').last.click()
-    assert page.locator('.variant').count() == 2
-    # Unsaved edits stay out of the saved single-scheme test.
-    page.locator('.variant [data-param=frequency]').last.fill('770')
-    page.click('[data-page=test]')
-    assert '660' in page.locator('#selected-variant').inner_text()
-    page.click('[data-page=compare]')
-    page.locator('.variant [data-param=frequency]').last.fill('660')
-    page.click('#save-variants')
-    page.wait_for_function("() => document.querySelector('#save-state').textContent === '已保存到本机'")
-    page.screenshot(path=str(output / 'tts-lab-comparison.png'), full_page=True)
-    page.locator('.variant .provider').first.select_option('openai')
-    assert page.locator('#compare-consent-row').is_visible()
-    page.locator('.variant .provider').first.select_option('demo')
-    assert page.locator('#compare-consent-row').is_hidden()
-    page.click('[data-page=models]')
-    page.wait_for_selector('.model-card')
-    assert page.locator('.model-card').count() == 6
-    assert page.locator('[data-model="glm-tts"] button').first.is_disabled()
-    page.select_option('#local-device', 'cuda')
-    page.select_option('#local-device', 'cpu')
-    page.screenshot(path=str(output / 'tts-lab-models.png'), full_page=True)
-    # Every navigation target must fit a narrow browser and the minimum desktop width.
-    for width in [880, 390]:
-        page.set_viewport_size({'width': width, 'height': 844})
-        for target in ['test', 'compare', 'models']:
-            page.click(f'[data-page={target}]')
-            assert page.locator(f'#page-{target}').is_visible()
-            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), (width, target)
-    page.click('[data-page=test]')
-    page.screenshot(path=str(output / 'tts-lab-mobile.png'), full_page=True)
-    page.click('[data-page=compare]')
-    page.locator('.variant .provider').first.select_option('local_indextts')
-    page.locator('.variant [data-param=reference_id]').first.select_option(reference_id)
-    page.set_viewport_size({'width': 320, 'height': 844})
-    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-    assert not errors, errors
-    print('UI passed: three pages, saved schemes/reload, single-vs-multi payloads, independent results, audio, ZIP, history, consent, responsive layout; no JS errors.')
-    browser.close()
+import httpx
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def fixture_server(port):
+    sys.path.insert(0, str(ROOT))
+    import uvicorn
+    from tts_lab import app as module
+    from tts_lab.providers import _audio, _wav
+
+    catalog = module.public_catalog
+
+    def fixture_catalog():
+        providers = catalog()
+        for provider in providers:
+            if provider['id'] == 'local_kokoro':
+                provider['ready'] = True
+                provider['missing_env'] = []
+                provider['installed_models'] = ['kokoro-v1.1']
+            else:
+                provider['ready'] = False
+        return providers
+
+    async def fixture_audio(provider, text, params):
+        assert provider == 'local_kokoro', 'Browser tests must never call cloud providers'
+        return _audio(_wav(b'\0\0' * 36000), {'fixture': True})
+
+    module.public_catalog = fixture_catalog
+    module.synthesize = fixture_audio
+    uvicorn.run(module.app, host='127.0.0.1', port=port, log_level='error')
+
+
+def check_ui(origin, data_dir):
+    from playwright.sync_api import sync_playwright
+    output = Path('/tmp/tts-lab-preview')
+    output.mkdir(exist_ok=True)
+    with sync_playwright() as p:
+        launch = {'headless': True, 'args': ['--no-sandbox']}
+        if os.getenv('CHROMIUM_PATH'):
+            launch['executable_path'] = os.environ['CHROMIUM_PATH']
+        browser = p.chromium.launch(**launch)
+        page = browser.new_page(viewport={'width': 1440, 'height': 1000})
+        errors = []
+        page.on('pageerror', lambda error: errors.append(str(error)))
+        page.goto(origin)
+        page.wait_for_selector('.variant')
+        assert page.locator('.variant').count() == 1
+        assert page.locator('.provider option[value="demo"]').count() == 0
+        assert page.locator('.preset').input_value() == ''
+        assert page.locator('.brand-mark').get_attribute('src') == '/static/icon.svg'
+        assert page.locator('.provider').input_value() == 'local_kokoro'
+        assert page.locator('#cloud-consent').count() == 0
+        # Every provider's defaults must pass browser constraints, including
+        # fractional ranges whose minimum is not aligned to their suggested step.
+        for service in page.locator('.provider option').evaluate_all('(nodes) => nodes.map(n => n.value)'):
+            page.locator('.provider').select_option(service)
+            invalid = page.locator('.variant input, .variant select, .variant textarea').evaluate_all(
+                '(nodes) => nodes.filter(n => !n.checkValidity()).map(n => n.dataset.param)')
+            assert not invalid, (service, invalid)
+            aligned = page.evaluate('''() => {
+                const text = document.querySelector('#text').getBoundingClientRect();
+                const params = document.querySelector('.provider-info').getBoundingClientRect();
+                return Math.abs(text.bottom - params.bottom) < 1;
+            }''')
+            assert aligned, service
+        page.locator('.provider').select_option('local_kokoro')
+        speed = page.locator('[data-param="speed"]')
+        voice = page.locator('[data-param="voice"]')
+        voice.fill('19')
+        speed.fill('1.1')
+        page.click('.save-preset')
+        page.fill('#preset-name', '日常朗读')
+        page.click('#confirm-save')
+        page.wait_for_selector('#save-dialog', state='hidden')
+        original_id = page.locator('.preset').input_value()
+        assert original_id
+        assert page.locator('.preset-status').inner_text() == '已保存'
+        speed.fill('1.2')
+        assert '未保存' in page.locator('.preset-status').inner_text()
+        # Generation uses the current draft without overwriting or creating presets.
+        page.click('#generate')
+        page.wait_for_selector('audio')
+        page.wait_for_function('() => !document.querySelector("#generate").disabled')
+        presets = page.request.get(origin + '/api/presets').json()['presets']
+        assert len(presets) == 1 and presets[0]['params']['speed'] == 1.1
+        runs = page.request.get(origin + '/api/runs').json()['runs']
+        assert runs[0]['params']['speed'] == 1.2
+        assert runs[0]['params']['voice'] == 19
+        # The single action synthesizes if needed, then starts playback itself.
+        page.wait_for_function('() => document.querySelector("audio").currentTime > 0')
+        original_audio = page.locator('audio').get_attribute('src')
+        page.click('#generate')
+        page.wait_for_function('() => !document.querySelector("#generate").disabled')
+        assert page.locator('audio').get_attribute('src') == original_audio
+        assert len(page.request.get(origin + '/api/runs').json()['runs']) == 1
+        # A changed parameter needs new audio; reverting reuses the older file.
+        speed.fill('1.3')
+        page.click('#generate')
+        page.wait_for_function('() => !document.querySelector("#generate").disabled')
+        assert page.locator('audio').get_attribute('src') != original_audio
+        assert len(page.request.get(origin + '/api/runs').json()['runs']) == 2
+        speed.fill('1.2')
+        page.click('#generate')
+        page.wait_for_function('() => !document.querySelector("#generate").disabled')
+        assert page.locator('audio').get_attribute('src') == original_audio
+        assert len(page.request.get(origin + '/api/runs').json()['runs']) == 2
+        page.click('.rating summary')
+        for select in page.locator('.score-grid select').all():
+            select.select_option('4')
+        page.fill('.result-notes', '试听笔记')
+        page.click('.score-actions button')
+        page.wait_for_function('() => document.querySelector(".score-actions span").textContent === "已保存"')
+        page.click('[data-view="compare"]')
+        assert page.locator('.variant').count() == 2
+        assert page.locator('audio').count() == 0
+        page.click('[data-view="test"]')
+        assert speed.input_value() == '1.2'
+        assert voice.input_value() == '19'
+        assert page.locator('audio').count() == 1
+        assert page.locator('.result-notes').input_value() == '试听笔记'
+        # Save updates the selected preset; save-as creates an independent copy.
+        page.click('.save-preset')
+        page.wait_for_function('() => document.querySelector(".preset-status").textContent === "已保存"')
+        assert page.locator('.preset').input_value() == original_id
+        voice.fill('20')
+        page.click('.save-as')
+        page.fill('#preset-name', '新的音色')
+        page.click('#confirm-save')
+        page.wait_for_selector('#save-dialog', state='hidden')
+        copy_id = page.locator('.preset').input_value()
+        assert copy_id != original_id
+        presets = {x['id']: x for x in page.request.get(origin + '/api/presets').json()['presets']}
+        assert presets[original_id]['params']['voice'] == 19
+        assert presets[original_id]['params']['speed'] == 1.2
+        assert presets[copy_id]['params']['voice'] == 20
+        page.locator('.preset').select_option('')
+        assert speed.input_value() == '1'
+        assert page.locator('.preset-status').inner_text() == ''
+        page.fill('#text', '这段文字在切换页面后仍然保留。')
+        page.click('[data-view="models"]')
+        page.wait_for_selector('.model-card')
+        assert page.locator('.model-card').count() == 6
+        assert page.locator('.cloud-model').count() == 13
+        assert '点击配置' not in page.locator('body').inner_text()
+        page.select_option('#local-device', 'cuda')
+        page.select_option('#local-device', 'cpu')
+        page.screenshot(path=str(output / 'models.png'), full_page=True)
+        page.click('[data-view="test"]')
+        assert page.locator('#text').input_value() == '这段文字在切换页面后仍然保留。'
+        page.fill('#text', '')
+        page.click('#generate')
+        assert '输入' in page.locator('#notice').inner_text()
+        page.reload()
+        page.wait_for_selector('.variant')
+        assert page.locator('.preset option').count() == 3
+        page.locator('.preset').select_option(original_id)
+        assert speed.input_value() == '1.2'
+        assert voice.input_value() == '19'
+        # Saved audio also survives a page reload, and text changes invalidate it.
+        page.click('#generate')
+        page.wait_for_function('() => !document.querySelector("#generate").disabled')
+        assert page.locator('audio').get_attribute('src') == original_audio
+        assert len(page.request.get(origin + '/api/runs').json()['runs']) == 2
+        page.fill('#text', '这是一段新的试听文本。')
+        page.click('#generate')
+        page.wait_for_function('() => !document.querySelector("#generate").disabled')
+        assert page.locator('audio').get_attribute('src') != original_audio
+        assert len(page.request.get(origin + '/api/runs').json()['runs']) == 3
+        page.screenshot(path=str(output / 'text-test.png'), full_page=True)
+        # Comparison remains independent and keeps its drafts across navigation.
+        page.click('[data-view="compare"]')
+        page.locator('.variant .preset').first.select_option(copy_id)
+        page.locator('.variant').first.locator('.icon-button').first.click()
+        assert page.locator('.variant').count() == 3
+        page.locator('.variant').last.locator('.icon-button').last.click()
+        assert page.locator('.variant').count() == 2
+        page.click('[data-view="models"]')
+        page.click('[data-view="compare"]')
+        assert page.locator('.variant .preset').first.input_value() == copy_id
+        page.click('#generate')
+        page.wait_for_function('() => document.querySelectorAll("audio").length === 2 && !document.querySelector("#generate").disabled')
+        assert page.locator('.download').count() == 0
+        page.locator('.rating summary').first.click()
+        page.locator('.result-notes').first.fill('保留盲听笔记')
+        page.uncheck('#blind')
+        assert page.locator('.download').count() == 2
+        assert page.locator('.result-notes').first.input_value() == '保留盲听笔记'
+        with page.expect_download() as download:
+            page.click('#download-batch')
+        download.value.save_as(str(output / 'batch.zip'))
+        page.click('#history-panel > summary')
+        page.wait_for_selector('.history-row')
+        assert page.locator('.history-row').count() == 4
+        page.locator('.history-row button').last.click()
+        assert page.locator('#page-title').inner_text() == '文本测试'
+        assert page.locator('audio').count() == 1
+        page.click('[data-view="compare"]')
+        for _ in range(4):
+            page.click('#add-variant')
+        assert page.locator('.variant').count() == 6
+        assert page.locator('#add-variant').is_hidden()
+        assert all(b.is_disabled() for b in page.locator('.variant-header .icon-button:first-child').all())
+        page.screenshot(path=str(output / 'compare.png'), full_page=True)
+        # No automatic fallback to a tone or paid request for unconfigured services.
+        page.click('[data-view="test"]')
+        page.locator('.provider').select_option('azure')
+        before = len(page.request.get(origin + '/api/runs').json()['runs'])
+        page.click('#generate')
+        page.wait_for_selector('#notice:not([hidden])')
+        assert '尚未配置' in page.locator('#notice').inner_text()
+        assert len(page.request.get(origin + '/api/runs').json()['runs']) == before
+        for width, height in [(1280, 800), (880, 700), (390, 844)]:
+            page.set_viewport_size({'width': width, 'height': height})
+            for view in ['test', 'compare', 'models']:
+                page.click(f'[data-view="{view}"]')
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), (width, view)
+                if width == 390:
+                    page.screenshot(path=str(output / f'mobile-{view}.png'), full_page=True)
+        assert len(list((data_dir / 'presets').glob('*.json'))) == 2
+        # A direct click on a cloud service must submit without a checkbox.
+        # Intercept both readiness and submission so this never makes a cloud call.
+        def cloud_state(route):
+            response = route.fetch()
+            state = response.json()
+            for service in state['providers']:
+                if service['id'] == 'openai':
+                    service.update(ready=True, missing_env=[])
+            route.fulfill(response=response, json=state)
+
+        submissions = []
+
+        def cloud_submit(route):
+            submissions.append(route.request.post_data_json)
+            route.fulfill(status=503, json={'detail': '模拟云端请求已接收'})
+
+        page.route('**/api/state', cloud_state)
+        page.route('**/api/batches', cloud_submit)
+        page.reload()
+        page.wait_for_selector('.variant')
+        page.click('#generate')
+        page.wait_for_selector('#notice:not([hidden])')
+        assert len(submissions) == 1
+        assert submissions[0]['allow_cloud'] is True
+        assert submissions[0]['variants'][0]['provider'] == 'openai'
+        assert '模拟云端请求已接收' in page.locator('#notice').inner_text()
+        assert not errors, errors
+        print('UI passed: optional presets, save/update/save-as, draft-only synthesis, automatic playback, '
+              'cache reuse after edits/reload, score retention, view isolation, blind reveal, ZIP, inline history, six-variant limit, '
+              'unconfigured service, desktop/mobile; no JS errors or cloud/model calls.')
+        browser.close()
+
+
+def main():
+    with tempfile.TemporaryDirectory(prefix='tts-lab-browser-') as temp:
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1', 0))
+            port = sock.getsockname()[1]
+        env = dict(os.environ, TTS_LAB_DATA_DIR=temp, TTS_LAB_MODELS_DIR=temp + '/models')
+        # This child imports app directly, never run.configure() or a .env file.
+        env.pop('TTS_LAB_DESKTOP', None)
+        server = subprocess.Popen([sys.executable, __file__, '--fixture-server', str(port)], cwd=ROOT, env=env)
+        origin = f'http://127.0.0.1:{port}'
+        try:
+            for _ in range(100):
+                if server.poll() is not None:
+                    raise RuntimeError('Fixture backend stopped')
+                try:
+                    if httpx.get(origin + '/api/state', timeout=1).status_code == 200:
+                        break
+                except httpx.ConnectError:
+                    pass
+                time.sleep(.1)
+            else:
+                raise RuntimeError('Fixture backend did not start')
+            check_ui(origin, Path(temp))
+        finally:
+            server.terminate()
+            try:
+                server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait()
+
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == '--fixture-server':
+        fixture_server(int(sys.argv[2]))
+    else:
+        main()
