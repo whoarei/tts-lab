@@ -16,7 +16,7 @@ const samples = [
 ];
 const studio = blind => ({variants: [], text: samples[0][1], blind,
   runs: [], batch: '', order: [], drafts: {}, message: '', error: false, autoplay: false});
-const S = {desktop: false, token: '', providers: [], presets: [], view: 'test', busy: false,
+const S = {desktop: false, token: '', providers: [], presets: [], view: 'test', studioView: 'test', busy: false,
   references: [], version: '', activityBusy: false, modelBusy: false, updating: false,
   activeMode: '', test: studio(false), compare: studio(true), saveTarget: null, playback: null};
 Object.defineProperty(S, 'saving', {get: () => [...S.test.variants, ...S.compare.variants].some(v => v.saving)});
@@ -46,9 +46,22 @@ async function api(path, options = {}) {
   return data;
 }
 const provider = id => S.providers.find(p => p.id === id);
-const defaults = id => Object.fromEntries(provider(id).fields.map(f => [f.key, f.default]));
-const initialProvider = () => S.providers.find(p => p.ready) || S.providers[0];
-function makeVariant(id = initialProvider().id, params) {
+const providerAvailable = item => !!item?.ready && (item.family === 'local'
+  ? !!item.installed_models?.length : item.family !== 'demo' && item.credentials_configured === true);
+const selectableProviders = () => S.providers.filter(providerAvailable);
+const variantAvailable = variant => {
+  const item = provider(variant.provider);
+  return providerAvailable(item) && (item.family !== 'local' || item.installed_models.includes(variant.params.model));
+};
+function defaults(id) {
+  const item = provider(id);
+  if (!item) return {};
+  const params = Object.fromEntries(item.fields.map(f => [f.key, f.default]));
+  if (item.family === 'local' && item.installed_models?.length) params.model = item.installed_models[0];
+  return params;
+}
+const initialProvider = () => selectableProviders()[0];
+function makeVariant(id = initialProvider()?.id || '', params) {
   return {uid: crypto.randomUUID(), provider: id, params: {...(params || defaults(id))},
     presetId: '', advanced: false, saving: false};
 }
@@ -73,8 +86,8 @@ function updateSaveState(card, v) {
   const status = $('.preset-status', card);
   status.textContent = v.saving ? '保存中…' : v.presetId ? dirty ? '有未保存更改' : '已保存' : '';
   status.classList.toggle('dirty', !!v.presetId && dirty);
-  $('.save-preset', card).disabled = S.busy || S.updating || C.saving || v.saving || (!!v.presetId && !dirty);
-  $('.save-as', card).disabled = S.busy || S.updating || C.saving || v.saving;
+  $('.save-preset', card).disabled = S.busy || S.updating || C.saving || v.saving || !variantAvailable(v) || (!!v.presetId && !dirty);
+  $('.save-as', card).disabled = S.busy || S.updating || C.saving || v.saving || !variantAvailable(v);
 }
 function renderField(field, v, card) {
   const label = el('label', undefined, 'field');
@@ -87,7 +100,14 @@ function renderField(field, v, card) {
     S.references.forEach(ref => input.append(option(ref.id, `${ref.name} · ${ref.duration_seconds} 秒`)));
   } else if (field.type === 'select') {
     input = el('select');
-    (field.options || []).forEach(o => input.append(typeof o === 'object' ? option(o.value, o.label) : option(o)));
+    const item = provider(v.provider);
+    const installed = field.key === 'model' && item?.family === 'local' ? item.installed_models || [] : null;
+    const values = (field.options || []).filter(o => !installed || installed.includes(typeof o === 'object' ? o.value : o));
+    if (installed && v.params[field.key] && !installed.includes(v.params[field.key])) {
+      const current = option(v.params[field.key], `${v.params[field.key]} · 未安装`);
+      current.disabled = true; input.append(current);
+    }
+    values.forEach(o => input.append(typeof o === 'object' ? option(o.value, o.label) : option(o)));
   } else if (field.type === 'textarea') {
     input = el('textarea'); input.rows = 2;
   } else {
@@ -103,7 +123,7 @@ function renderField(field, v, card) {
   if (field.type === 'number') input.step = field.step === 1 ? '1' : 'any';
   if (['text', 'textarea'].includes(field.type)) input.maxLength = 2000;
   if (field.default !== '' && field.type !== 'checkbox') input.required = true;
-  input.disabled = S.busy || S.updating || C.saving || v.saving;
+  input.disabled = S.busy || S.updating || C.saving || v.saving || !providerAvailable(provider(v.provider));
   input.addEventListener('input', () => {
     v.params[field.key] = field.type === 'checkbox' ? input.checked :
       field.type === 'number' && input.value !== '' ? Number(input.value) : input.value;
@@ -156,7 +176,7 @@ function renderVariants() {
         copy.presetId = v.presetId;
         mode.variants.push(copy); renderVariants();
       });
-      clone.disabled = S.busy || S.updating || C.saving || v.saving || mode.variants.length >= 6;
+      clone.disabled = S.busy || S.updating || C.saving || v.saving || !variantAvailable(v) || mode.variants.length >= 6;
       const remove = button('移除', 'icon-button', () => {
         mode.variants = mode.variants.filter(x => x.uid !== v.uid); renderVariants();
       });
@@ -184,15 +204,23 @@ function renderVariants() {
     serviceLabel.append(el('span', '语音服务'));
     const service = el('select', undefined, 'provider');
     service.setAttribute('aria-label', `方案 ${index + 1} 语音服务`);
-    S.providers.forEach(item => service.append(option(item.id, item.name)));
+    const available = selectableProviders();
+    if (!providerAvailable(p)) {
+      const current = option(v.provider, p ? `${p.name} · 暂不可用` : available.length ? '选择语音服务' : '暂无可用服务');
+      current.disabled = true; service.append(current);
+    }
+    available.forEach(item => service.append(option(item.id, item.name)));
     service.value = v.provider;
-    service.disabled = S.busy || S.updating || C.saving || v.saving;
-    service.onchange = () => { v.provider = service.value; v.params = defaults(v.provider); renderVariants(); };
+    service.disabled = S.busy || S.updating || C.saving || v.saving || !available.length;
+    service.onchange = () => {
+      if (!providerAvailable(provider(service.value))) return;
+      v.provider = service.value; v.params = defaults(v.provider); renderVariants();
+    };
     serviceLabel.append(service); card.append(serviceLabel);
     const coreKeys = new Set(['model', 'voice', 'voice_id', 'speed', 'speaking_rate', 'rate', 'instructions', 'reference_id', 'reference_text']);
     const basic = el('div', undefined, 'field-grid');
     const more = el('div', undefined, 'field-grid');
-    p.fields.forEach(field => (coreKeys.has(field.key) ? basic : more).append(renderField(field, v, card)));
+    (p?.fields || []).forEach(field => (coreKeys.has(field.key) ? basic : more).append(renderField(field, v, card)));
     card.append(basic);
     if (more.childElementCount) {
       const advanced = el('details', undefined, 'advanced');
@@ -206,25 +234,28 @@ function renderVariants() {
     });
     const saveAs = button('另存为', 'text-button save-as', () => { if (validEditor(v)) openSave(v); });
     saveActions.append(el('span', '', 'preset-status'), save, saveAs); card.append(saveActions);
-    const info = el('details', undefined, 'provider-info');
-    info.append(el('summary', p.warning ? '服务说明 · Legacy 接口' : '服务说明'));
-    info.append(el('p', p.description));
-    if (p.warning) info.append(el('p', p.warning, 'warning'));
-    if (!p.ready) info.append(el('p', p.family === 'local' ? '所选服务需要先安装本地模型。' : `凭证变量：${p.missing_env.join('、')}`));
-    if (p.docs) {
-      const link = el('a', '接口文档 ↗', 'doc-link');
-      link.href = p.docs; link.target = '_blank'; link.rel = 'noreferrer'; info.append(link);
+    if (p) {
+      const info = el('details', undefined, 'provider-info');
+      info.append(el('summary', p.warning ? '服务说明 · Legacy 接口' : '服务说明'));
+      info.append(el('p', p.description));
+      if (p.warning) info.append(el('p', p.warning, 'warning'));
+      if (!p.ready) info.append(el('p', p.family === 'local' ? '所选服务需要先安装本地模型。' : `凭证变量：${p.missing_env.join('、')}`));
+      if (p.docs) {
+        const link = el('a', '接口文档 ↗', 'doc-link');
+        link.href = p.docs; link.target = '_blank'; link.rel = 'noreferrer'; info.append(link);
+      }
+      card.append(info);
     }
-    card.append(info); root.append(card); updateSaveState(card, v);
+    root.append(card); updateSaveState(card, v);
   });
-  $('#add-variant').disabled = S.busy || S.updating || C.saving || mode.variants.length >= 6;
+  $('#add-variant').disabled = S.busy || S.updating || C.saving || !selectableProviders().length || mode.variants.length >= 6;
   $('#variant-limit').hidden = S.view !== 'compare' || mode.variants.length < 6;
   $('#add-variant').hidden = S.view !== 'compare' || mode.variants.length >= 6;
   document.querySelectorAll('.history-row button').forEach(node => { node.disabled = S.busy; });
   updateRunbar(); freezeUpdateControls();
 }
 function openSave(v) {
-  if (S.updating || S.busy || C.saving || v.saving) return;
+  if (S.updating || S.busy || C.saving || v.saving || !variantAvailable(v)) return;
   S.saveTarget = v;
   const saved = S.presets.find(x => x.id === v.presetId);
   $('#preset-name').value = saved ? `${saved.name} 副本`.slice(0, 80) : '';
@@ -233,7 +264,7 @@ function openSave(v) {
   $('#preset-name').focus();
 }
 async function savePreset(v, newName) {
-  if (S.busy || S.updating || C.saving || v.saving) return;
+  if (S.busy || S.updating || C.saving || v.saving || !variantAvailable(v)) return;
   const existing = S.presets.find(x => x.id === v.presetId);
   const isNew = newName !== undefined;
   const name = isNew ? newName.trim() : existing?.name;
@@ -286,8 +317,10 @@ async function cachedRuns(text, variants) {
   return Array.from(batches.values()).find(batch => matchesRuns(batch, text, variants));
 }
 function updateRunbar() {
-  $('#generate').disabled = S.busy || S.updating || C.saving || S.saving;
-  $('#generate').textContent = S.busy ? '准备试听…' : S.view === 'test' ? '试听' : '试听对比';
+  const mode = S[S.studioView];
+  const canListen = mode.variants.length && (mode.variants.every(variantAvailable) || matchesRuns(mode.runs, mode.text, mode.variants));
+  $('#generate').disabled = S.busy || S.updating || C.saving || S.saving || !canListen;
+  $('#generate').textContent = S.busy ? '准备试听…' : S.studioView === 'test' ? '试听' : '试听对比';
   credentialControls(); renderUpdateControls();
 }
 function captureScores(mode) {
@@ -305,6 +338,7 @@ function showView(view) {
     captureScores(S[S.view]);
   }
   S.view = view;
+  if (isStudioView(view)) S.studioView = view;
   S.playback = null;
   clearTimeout(modelTimer);
   clearTimeout(activityTimer);
@@ -486,7 +520,8 @@ async function listen() {
   notice();
   const view = S.view, mode = S[view], text = $('#text').value.trim();
   if (!text) { notice('请先输入要朗读的文本。', true); return; }
-  if (!mode.variants.every(validEditor)) return;
+  const replay = matchesRuns(mode.runs, text, mode.variants);
+  if (!replay && (!mode.variants.every(variantAvailable) || !mode.variants.every(validEditor))) return;
   const variants = mode.variants.map(v => ({provider: v.provider, params: {...v.params}}));
   mode.autoplay = true;
   S.playback = null;
@@ -505,7 +540,7 @@ async function listen() {
     }
     for (const variant of variants) {
       const p = provider(variant.provider);
-      if (!p.ready || (p.family === 'local' && !p.installed_models.includes(variant.params.model))) {
+      if (!variantAvailable(variant)) {
         throw new Error(p.family === 'local' ? '所选本地模型尚未安装，请在“模型配置”中下载。' :
           `${p.name} 尚未配置，请在“模型配置”中填写凭证。`);
       }
@@ -635,8 +670,8 @@ async function init() {
     if (S.desktop) $('#config-guide').textContent = '在“文件 → 编辑 API 凭证”中填写服务密钥，保存后选择“重启并载入凭证”。配置与历史保存在本机用户目录，凭证文件为明文，请勿分享。';
     S.presets = (await api('/api/presets')).presets;
     S.test.variants = [makeVariant()];
-    const ready = S.providers.filter(p => p.ready);
-    S.compare.variants = [makeVariant(), makeVariant(ready[1]?.id || initialProvider().id)];
+    const ready = selectableProviders();
+    S.compare.variants = [makeVariant(), makeVariant(ready[1]?.id || initialProvider()?.id || '')];
     samples.forEach(([name, text]) => {
       const sample = button(name, '', () => { $('#text').value = text; updateCount(); });
       sample.dataset.text = text; $('#samples').append(sample);
@@ -645,8 +680,9 @@ async function init() {
     $('#text').oninput = updateCount;
     $('#clear-text').onclick = () => { $('#text').value = ''; updateCount(); $('#text').focus(); };
     $('#add-variant').onclick = () => {
-      if (S.busy || S.updating || C.saving || S.view !== 'compare' || S.compare.variants.length >= 6) return;
-      S.compare.variants.push(makeVariant(S.compare.variants.at(-1).provider)); renderVariants();
+      if (S.busy || S.updating || C.saving || S.view !== 'compare' || !selectableProviders().length || S.compare.variants.length >= 6) return;
+      const previous = S.compare.variants.at(-1);
+      S.compare.variants.push(makeVariant(variantAvailable(previous) ? previous.provider : initialProvider().id)); renderVariants();
     };
     $('#generate').onclick = () => void listen();
     $('#blind').onchange = () => {
@@ -660,7 +696,11 @@ async function init() {
     $('#local-device').onchange = () => void refreshModels();
     $('#text').value = S.test.text;
     showView('test');
-  } catch (error) { notice(`无法连接本机服务：${error.message}`, true); $('#generate').disabled = true; }
+    document.body.dataset.ready = 'true';
+  } catch (error) {
+    document.body.dataset.ready = 'error';
+    notice(`无法连接本机服务：${error.message}`, true); $('#generate').disabled = true;
+  }
 }
 async function uploadReference(file, variant) {
   if (S.updating || S.busy || variant.saving) return;

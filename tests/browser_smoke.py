@@ -23,23 +23,41 @@ def fixture_server(port):
     sys.path.insert(0, str(ROOT))
     import uvicorn
     from tts_lab import app as module
+    from tts_lab import credentials
     from tts_lab.providers import _audio, _wav
 
+    for key in list(os.environ):
+        if key in credentials.PROVIDER_ENV or key.startswith('AWS_'):
+            os.environ.pop(key, None)
+    credentials.CONFIG_PATH = Path(os.environ['TTS_LAB_DATA_DIR']) / 'credentials.env'
     catalog = module.public_catalog
+    installed = {'local_kokoro': ['kokoro-v1.1'], 'local_qwen3': ['qwen3-1.7b']}
 
     def fixture_catalog():
         providers = catalog()
         for provider in providers:
-            if provider['id'] == 'local_kokoro':
-                provider['ready'] = True
-                provider['missing_env'] = []
-                provider['installed_models'] = ['kokoro-v1.1']
-            else:
+            if provider['id'] in installed:
+                provider['ready'] = bool(installed[provider['id']])
+                provider['missing_env'] = [] if provider['ready'] else ['fixture model unavailable']
+                provider['installed_models'] = installed[provider['id']][:]
+            elif provider['id'] == 'polly':
+                # The source catalog may detect an SDK without credentials.
+                provider.update(ready=True, credentials_configured=False)
+            elif provider['id'] == 'openai':
+                provider.update(ready=False, credentials_configured=True)
+            elif provider['id'] != 'deepseek':
                 provider['ready'] = False
         return providers
 
+    @module.app.post('/fixture/availability')
+    async def fixture_availability(models: dict):
+        for key, values in models.items():
+            assert key in installed and isinstance(values, list)
+            installed[key] = values
+        return {'status': 'updated'}
+
     async def fixture_audio(provider, text, params):
-        assert provider == 'local_kokoro', 'Browser tests must never call cloud providers'
+        assert provider in installed, 'Browser tests must never call cloud providers'
         return _audio(_wav(b'\0\0' * 36000), {'fixture': True})
 
     module.public_catalog = fixture_catalog
@@ -60,12 +78,13 @@ def check_ui(origin, data_dir):
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.goto(origin)
-        page.wait_for_selector('.variant')
+        page.wait_for_selector('body[data-ready="true"]')
         assert page.locator('.variant').count() == 1
         assert page.locator('.provider option[value="demo"]').count() == 0
         assert page.locator('.preset').input_value() == ''
         assert page.locator('.brand-mark').get_attribute('src') == '/static/icon.svg'
         assert page.locator('.provider').input_value() == 'local_kokoro'
+        assert page.locator('.provider option:enabled').evaluate_all('(nodes) => nodes.map(n => n.value)') == ['local_kokoro', 'local_qwen3']
         assert page.locator('#cloud-consent').count() == 0
         # Every provider's defaults must pass browser constraints, including
         # fractional ranges whose minimum is not aligned to their suggested step.
@@ -80,6 +99,9 @@ def check_ui(origin, data_dir):
                 return Math.abs(text.bottom - params.bottom) < 1;
             }''')
             assert aligned, service
+            if service == 'local_qwen3':
+                assert page.locator('[data-param="model"] option:enabled').evaluate_all('(nodes) => nodes.map(n => n.value)') == ['qwen3-1.7b']
+                assert page.locator('[data-param="model"]').input_value() == 'qwen3-1.7b'
         page.locator('.provider').select_option('local_kokoro')
         speed = page.locator('[data-param="speed"]')
         voice = page.locator('[data-param="voice"]')
@@ -219,7 +241,7 @@ def check_ui(origin, data_dir):
         # Opening history replaces the current text and editor settings, without
         # attaching the restored draft to a saved preset or changing its files.
         page.fill('#text', '这些是尚未保存的编辑内容。')
-        page.locator('.variant .provider').first.select_option('azure')
+        page.locator('.variant .provider').first.select_option('local_qwen3')
         page.click('#history-panel > summary')
         page.wait_for_selector('.history-row')
         assert page.locator('.history-row').count() == 4
@@ -257,13 +279,32 @@ def check_ui(origin, data_dir):
         assert page.locator('#add-variant').is_hidden()
         assert all(b.is_disabled() for b in page.locator('.variant-header .icon-button:first-child').all())
         page.screenshot(path=str(output / 'compare.png'), full_page=True)
-        # No automatic fallback to a tone or paid request for unconfigured services.
+        # Historical presets retain unavailable values as context, never options
+        # that can silently invoke an unconfigured service or an absent model.
         page.click('[data-view="test"]')
-        page.locator('.provider').select_option('azure')
+        token = page.request.get(origin + '/api/state').json()['token']
+        headers = {'X-Local-Token': token}
+        legacy_model = page.request.post(origin + '/api/presets', headers=headers, data={
+            'name': '旧的本地模型', 'provider': 'local_qwen3', 'params': {'model': 'qwen3-0.6b'}}).json()
+        legacy_cloud = page.request.post(origin + '/api/presets', headers=headers, data={
+            'name': '旧的云服务', 'provider': 'azure', 'params': {}}).json()
+        page.reload(); page.wait_for_selector('body[data-ready="true"]')
+        page.locator('.preset').select_option(legacy_model['id'])
+        model = page.locator('[data-param="model"]')
+        assert model.input_value() == 'qwen3-0.6b'
+        assert model.locator('option:checked').evaluate('(node) => node.disabled'), model.evaluate('(node) => node.outerHTML')
+        assert model.locator('option:enabled').evaluate_all('(nodes) => nodes.map(n => n.value)') == ['qwen3-1.7b']
+        assert page.locator('#generate').is_disabled() and page.locator('.save-preset').is_disabled()
+        model.select_option('qwen3-1.7b')
+        assert page.locator('#generate').is_enabled()
+        assert next(p for p in page.request.get(origin + '/api/presets').json()['presets'] if p['id'] == legacy_model['id'])['params']['model'] == 'qwen3-0.6b'
+        page.locator('.preset').select_option(legacy_cloud['id'])
+        assert page.locator('.provider').input_value() == 'azure'
+        assert page.locator('.provider option:checked').evaluate('(node) => node.disabled')
+        assert page.locator('.provider option[value="azure"]:enabled').count() == 0
+        assert page.locator('#generate').is_disabled() and page.locator('.save-as').is_disabled()
         before = len(page.request.get(origin + '/api/runs').json()['runs'])
-        page.click('#generate')
-        page.wait_for_selector('#notice:not([hidden])')
-        assert '尚未配置' in page.locator('#notice').inner_text()
+        page.locator('#generate').dispatch_event('click')
         assert len(page.request.get(origin + '/api/runs').json()['runs']) == before
         for width, height in [(1280, 800), (880, 700), (390, 844)]:
             page.set_viewport_size({'width': width, 'height': height})
@@ -272,7 +313,46 @@ def check_ui(origin, data_dir):
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), (width, view)
                 if width == 390:
                     page.screenshot(path=str(output / f'mobile-{view}.png'), full_page=True)
-        assert len(list((data_dir / 'presets').glob('*.json'))) == 2
+        assert len(list((data_dir / 'presets').glob('*.json'))) == 4
+        # Removing a model does not prevent playing matching completed history.
+        response = page.request.post(origin + '/fixture/availability', headers=headers, data={'local_kokoro': []})
+        assert response.ok
+        page.reload(); page.wait_for_selector('body[data-ready="true"]')
+        assert page.locator('.provider').input_value() == 'local_qwen3'
+        page.click('#history-panel > summary'); page.wait_for_selector('.history-row')
+        page.locator('.history-row button').last.click()
+        assert page.locator('.provider').input_value() == 'local_kokoro'
+        assert page.locator('.provider option:checked').evaluate('(node) => node.disabled')
+        assert page.locator('[data-param="model"]').input_value() == 'kokoro-v1.1'
+        assert page.locator('[data-param="model"] option:checked').evaluate('(node) => node.disabled')
+        assert page.locator('#generate').is_enabled()
+        page.click('#generate')
+        page.wait_for_function('() => !document.querySelector("#generate").disabled')
+        assert page.locator('#results audio').get_attribute('src') == original_audio
+        assert len(page.request.get(origin + '/api/runs').json()['runs']) == before
+        page.fill('#text', '当前模型已经删除，这段新文本不能重新生成。')
+        assert page.locator('#generate').is_disabled()
+        assert page.locator('.provider').input_value() == 'local_kokoro'
+        # No ready service means an empty editor, while About, configuration and
+        # historical audio remain available. Configuring a key enables its option.
+        response = page.request.post(origin + '/fixture/availability', headers=headers, data={'local_qwen3': []})
+        assert response.ok
+        page.reload(); page.wait_for_selector('body[data-ready="true"]')
+        assert page.locator('.provider').input_value() == '' and page.locator('.provider').is_disabled()
+        assert page.locator('[data-param]').count() == 0
+        assert page.locator('#generate').is_disabled() and page.locator('.save-preset').is_disabled()
+        page.click('[data-view="about"]'); assert page.locator('#about-panel').is_visible()
+        page.click('[data-view="models"]'); page.wait_for_selector('.cloud-model')
+        assert page.locator('.cloud-model').count() == 13
+        page.click('[data-provider="deepseek"]')
+        page.fill('#credential-DEEPSEEK_API_KEY', 'browser-fixture-key-not-a-real-key')
+        page.click('#credential-save'); page.wait_for_selector('#credential-dialog', state='hidden')
+        page.click('[data-view="test"]')
+        assert page.locator('.provider').input_value() == ''
+        assert page.locator('.provider').is_enabled()
+        assert page.locator('.provider option:enabled').evaluate_all('(nodes) => nodes.map(n => n.value)') == ['deepseek']
+        page.locator('.provider').select_option('deepseek')
+        assert page.locator('#generate').is_enabled() and page.locator('.save-preset').is_enabled()
         # A direct click on a cloud service must submit without a checkbox.
         # Intercept both readiness and submission so this never makes a cloud call.
         def cloud_state(route):
@@ -280,7 +360,7 @@ def check_ui(origin, data_dir):
             state = response.json()
             for service in state['providers']:
                 if service['id'] == 'openai':
-                    service.update(ready=True, missing_env=[])
+                    service.update(ready=True, credentials_configured=True, missing_env=[])
             route.fulfill(response=response, json=state)
 
         submissions = []
@@ -292,7 +372,7 @@ def check_ui(origin, data_dir):
         page.route('**/api/state', cloud_state)
         page.route('**/api/batches', cloud_submit)
         page.reload()
-        page.wait_for_selector('.variant')
+        page.wait_for_selector('body[data-ready="true"]')
         page.click('#generate')
         page.wait_for_selector('#notice:not([hidden])')
         assert len(submissions) == 1
@@ -302,7 +382,7 @@ def check_ui(origin, data_dir):
         assert not errors, errors
         print('UI passed: optional presets, save/update/save-as, draft-only synthesis, automatic playback, '
               'cache reuse after edits/reload, score retention, view isolation, blind reveal, ZIP, inline history, six-variant limit, '
-              'unconfigured service, desktop/mobile; no JS errors or cloud/model calls.')
+              'ready service/model filtering, unavailable history replay, empty/configured states, desktop/mobile; no JS errors or cloud/model calls.')
         browser.close()
 
 

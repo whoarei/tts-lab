@@ -51,17 +51,26 @@ with tempfile.TemporaryDirectory() as folder:
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 page.on('request', lambda req: batches.append(req.url) if req.url.endswith('/api/batches') else None)
                 page.goto(base)
-                page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
+                page.wait_for_selector('body[data-ready="true"]')
+                assert page.locator('.provider option[value=deepseek]').count() == 1
+                assert page.locator('.provider option[value=azure]').count() == 0
                 page.click('[data-view=models]')
                 assert page.locator('#edit-credentials, #restart-app').count() == 0
                 card = page.locator('[data-provider=deepseek]')
                 assert '已配置' in card.inner_text()
-                card.focus(); page.keyboard.press('Enter')
+                card.focus()
+                # Reproduce model polling after keyboard focus, before activation.
+                page.evaluate('() => refreshModels()')
+                assert card.evaluate('(el) => el === document.activeElement')
+                page.keyboard.press('Enter')
                 key = page.locator('#credential-DEEPSEEK_API_KEY')
                 key.wait_for()
                 assert key.input_value() == ''
                 assert key.get_attribute('type') == 'password'
                 assert '已配置' in page.locator('#credential-fields').inner_text()
+                key.focus()
+                page.evaluate('() => refreshModels()')
+                assert key.evaluate('(el) => el === document.activeElement')
                 key.fill('unsaved-synthetic-key')
                 page.get_by_role('button', name='显示新输入的 API Key', exact=True).click()
                 assert key.get_attribute('type') == 'text'
@@ -107,6 +116,11 @@ with tempfile.TemporaryDirectory() as folder:
                 page.wait_for_function("() => !document.querySelector('#credential-dialog').open")
                 assert '已配置' in page.locator('[data-provider=azure]').inner_text()
                 assert dotenv_values(config)['AZURE_SPEECH_REGION'] == 'westus'
+                page.click('[data-view=test]')
+                assert page.locator('.provider option[value=azure]').count() == 1
+                page.locator('.provider').select_option('azure')
+                assert page.locator('.provider').input_value() == 'azure'
+                page.click('[data-view=models]')
                 # Optional AWS token can be cleared when switching back to long-term keys.
                 page.click('[data-provider=polly]')
                 page.locator('#credential-mode').select_option('profile')
@@ -125,7 +139,7 @@ with tempfile.TemporaryDirectory() as folder:
                 assert page.locator('#credential-save').is_visible()
                 page.screenshot(path=str(output / 'tts-lab-credentials-narrow.png'))
                 page.click('#credential-close')
-                page.reload(); page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
+                page.reload(); page.wait_for_selector('body[data-ready="true"]')
                 page.click('[data-view=models]'); card.click(); key.wait_for()
                 assert key.input_value() == ''
                 assert not errors, errors

@@ -259,16 +259,25 @@ async function setupDesktop() {
 }
 
 function renderServices() {
-  const root = $('#cloud-services'); root.replaceChildren();
+  const root = $('#cloud-services');
+  const previous = new Map(Array.from(root.children, card => [card.dataset.provider, card]));
+  const ordered = [];
   for (const item of S.providers.filter(item => item.family !== 'local')) {
-    const card = el('button', undefined, 'cloud-model');
+    // Model-state polling must not replace the button between keyboard focus
+    // and activation, or steal focus from an open credential dialog.
+    const card = previous.get(item.id) || el('button', undefined, 'cloud-model');
+    previous.delete(item.id);
     card.type = 'button'; card.dataset.provider = item.id;
     card.setAttribute('aria-haspopup', 'dialog'); card.setAttribute('aria-controls', 'credential-dialog');
     card.setAttribute('aria-label', `配置 ${item.name}`);
     card.disabled = S.updating || C.saving;
-    card.append(el('div', item.name), el('span', item.credentials_configured ? '已配置' : '待配置', item.credentials_configured ? 'available' : ''));
-    card.onclick = () => openCredentials(item.id); root.append(card);
+    card.replaceChildren(el('div', item.name), el('span', item.credentials_configured ? '已配置' : '待配置', item.credentials_configured ? 'available' : ''));
+    card.onclick = () => openCredentials(item.id); ordered.push(card);
   }
+  for (const card of previous.values()) card.remove();
+  ordered.forEach((card, index) => {
+    if (root.children[index] !== card) root.insertBefore(card, root.children[index] || null);
+  });
 }
 function freezeUpdateControls() {
   for (const control of document.querySelectorAll('#generate, #add-variant, .variant input, .variant select, .variant textarea, .variant button, #text, .samples button, #clear-text, #local-device, #local-model-list button, #cloud-services button, .score-grid select, .result-notes, .score-actions button, #preset-name, #confirm-save')) {

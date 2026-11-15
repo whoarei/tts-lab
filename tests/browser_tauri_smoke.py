@@ -27,7 +27,7 @@ with sync_playwright() as p:
     browser = p.chromium.launch(**launch)
     ordinary = browser.new_page()
     ordinary.goto(backend)
-    ordinary.wait_for_function("() => !!document.querySelector('.variant .provider') && !document.querySelector('.variant .provider').disabled")
+    ordinary.wait_for_selector('body[data-ready="true"]')
     assert ordinary.locator('#app-update-panel').is_hidden()
     ordinary.click('[data-view=about]')
     assert ordinary.locator('#about-panel').is_visible()
@@ -99,6 +99,16 @@ with sync_playwright() as p:
                    if key.lower() not in {'host', 'origin', 'sec-fetch-site'}}
         response = route.fetch(url=backend + parsed.path + ('?' + parsed.query if parsed.query else ''),
                                headers=headers)
+        if parsed.path == '/api/state':
+            data = response.json()
+            # UI-only installed-model fixture; backend still rejects inference.
+            for service in data['providers']:
+                service['ready'] = service['id'] == 'local_indextts'
+                if service['id'] == 'local_indextts':
+                    service['installed_models'] = ['indextts-2']
+                    service['missing_env'] = []
+            route.fulfill(status=200, headers=cors, json=data)
+            return
         if parsed.path == '/api/activity' and active_model:
             route.fulfill(status=200, headers=cors, json={'busy': True, 'active_runs': 0, 'active_installs': 1})
             return
@@ -113,7 +123,7 @@ with sync_playwright() as p:
     context.route(backend + '/', document_route)
     context.route(api_origin + '/**', protocol_route)
     page.goto(backend)
-    page.wait_for_function("() => !!document.querySelector('.variant .provider') && !document.querySelector('.variant .provider').disabled")
+    page.wait_for_selector('body[data-ready="true"]')
     assert page.locator('#window-controls').is_visible()
     page.click('[data-view=about]')
     assert page.locator('#about-panel').is_visible()
@@ -169,7 +179,7 @@ with sync_playwright() as p:
     page.wait_for_function("() => window.__NATIVE_CALLS__.filter(call => call[0] === 'save_export').length === 3")
     assert page.url == original_url
     page.click('[data-view=compare]')
-    first.locator('.provider').select_option('openai')
+    first.locator('.provider').select_option('local_indextts')
     first.locator('.provider-info summary').click()
     first.locator('.doc-link').click()
     page.wait_for_function("() => window.__NATIVE_CALLS__.some(call => call[0] === 'open_documentation')")
@@ -213,7 +223,7 @@ with sync_playwright() as p:
     # click must not dispatch install until the active work finishes.
     page.click('[data-view=test]')
     hold_generations = True
-    page.locator('.provider').select_option('local_kokoro')
+    page.locator('.provider').select_option('local_indextts')
     page.click('#generate')
     page.click('[data-view=about]')
     assert page.locator('#install-app-update').is_disabled()
@@ -290,18 +300,18 @@ with sync_playwright() as p:
     # Daily startup checking is gated by the native production flag and a user
     # preference. Reloading within 24 hours never repeats the automatic check.
     page.evaluate("localStorage.setItem('test.updates.autoEnabled', '0'); localStorage.removeItem('ttsLab.updates.lastCheckAt'); localStorage.removeItem('ttsLab.updates.autoCheck')")
-    page.reload(); page.wait_for_function("() => !!document.querySelector('.variant .provider') && !document.querySelector('.variant .provider').disabled")
+    page.reload(); page.wait_for_selector('body[data-ready="true"]')
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'check_update')")
     page.evaluate("localStorage.setItem('test.updates.autoEnabled', '1'); localStorage.setItem('ttsLab.updates.autoCheck', '0')")
-    page.reload(); page.wait_for_function("() => !!document.querySelector('.variant .provider') && !document.querySelector('.variant .provider').disabled")
+    page.reload(); page.wait_for_selector('body[data-ready="true"]')
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'check_update')")
     page.click('[data-view=about]')
     assert not page.locator('#app-update-auto').is_checked()
     page.check('#app-update-auto')
-    page.reload(); page.wait_for_function("() => !!document.querySelector('.variant .provider') && !document.querySelector('.variant .provider').disabled")
+    page.reload(); page.wait_for_selector('body[data-ready="true"]')
     page.wait_for_function("() => window.__NATIVE_CALLS__.filter(call => call[0] === 'check_update').length === 1")
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => ['download_update', 'install_update'].includes(call[0]))")
-    page.reload(); page.wait_for_function("() => !!document.querySelector('.variant .provider') && !document.querySelector('.variant .provider').disabled")
+    page.reload(); page.wait_for_selector('body[data-ready="true"]')
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'check_update')")
     page.click('[data-view=about]')
     page.click('#check-app-update')

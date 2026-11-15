@@ -14,7 +14,7 @@
     "desktop_adapter_tests": "PASS: 10/10 Node bridge tests.",
     "rust_checks": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
     "javascript_syntax": "PASS: app.js, settings.js, desktop.js and desktop/smoke.js.",
-    "browser_smoke": "PASS: core/history, credentials, DeepSeek mocked PCM and Tauri bridge/About/update suites in parallel; desktop and narrow layout; no real cloud/model calls.",
+    "browser_smoke": "PASS: extended availability/core/history, credential focus/visibility, DeepSeek mocked PCM and Tauri bridge/About/update suites; empty state, installed model filtering, cached unavailable-history playback and live credential configuration; no real cloud/model calls.",
     "windows_tauri_build": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
     "windows_bundled_backend": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
     "windows_desktop_smoke": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
@@ -40,7 +40,8 @@
     "deepseek_packaged_backend": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
     "linux_rust": "NOT RUN locally: Rust toolchain unavailable; unchanged Rust logic will be tested by the required native Windows workflow.",
     "windows_ci": "PENDING for 0.10.0; previous-release evidence does not establish this build.",
-    "credential_reveal_visual": "Native WebView2 reveal hidden via a scoped ::-ms-reveal rule; custom accessible toggle/masking/no stored-key readback verified. Manual Windows visual inspection not performed."
+    "credential_reveal_visual": "Native WebView2 reveal hidden via a scoped ::-ms-reveal rule; custom accessible toggle/masking/no stored-key readback verified. Manual Windows visual inspection not performed.",
+    "configuration_focus": "PASS: old renderServices replacement deterministically reproduced lost focus; keyed card reuse preserves focused card and dialog input during refresh. Initial readiness now waits for body data-ready."
   },
   "release_integrity": "Build scripts retain locked Python/wheel and WebView2-bootstrapper SHA256 checks, final ZIP CRC and payload manifest hashes; SHA256 sidecars are generated for ZIP and setup EXE. Rust uses Cargo.lock.",
   "persistent_config": "%LOCALAPPDATA%\\TTS Lab\\credentials.env (plaintext, user-owned)",
@@ -264,7 +265,7 @@
     "target_tag": "v0.10.0",
     "intended_release_url": "https://github.com/whoarei/tts-lab/releases/tag/v0.10.0",
     "status": "PREPARED: local checks passed; final Windows tag workflow will gate publication.",
-    "scope": "About page with current version and update operations; one credential visibility control; restore historical text/provider/model/parameters into independent drafts.",
+    "scope": "About/version/update page; single credential visibility control; history restores independent text/provider/model/parameter drafts; only configured ready cloud services and installed local models selectable; preserve keyboard focus during model-state refresh.",
     "runtime_changes": "No runtime or dependency upgrades.",
     "real_cloud_requests": "none; synthetic audio and mocked providers only."
   },

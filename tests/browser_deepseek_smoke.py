@@ -109,7 +109,7 @@ def main():
                 page.on('request', lambda request: submissions.append(request.post_data_json)
                         if request.method == 'POST' and request.url.endswith('/api/batches') else None)
                 page.goto(origin)
-                page.wait_for_selector('.variant')
+                page.wait_for_selector('body[data-ready="true"]')
                 first = page.locator('.variant').first
                 first.locator('.provider').select_option('deepseek')
                 assert first.locator('[data-param=voice]').input_value() == 'stella'
@@ -126,7 +126,7 @@ def main():
                 page.click('.save-as'); page.fill('#preset-name', 'DeepSeek stella · 过滤 Markdown'); page.click('#confirm-save')
                 page.wait_for_selector('#save-dialog', state='hidden')
                 stella_id = page.locator('.preset').input_value()
-                page.reload(); page.wait_for_selector('.variant')
+                page.reload(); page.wait_for_selector('body[data-ready="true"]')
                 page.locator('.preset').select_option(tide_id)
                 assert first.locator('[data-param=voice]').input_value() == 'tide'
                 assert not first.locator('[data-param=filter_markdown]').is_checked()

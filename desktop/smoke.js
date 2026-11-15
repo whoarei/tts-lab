@@ -15,8 +15,9 @@ window.addEventListener('DOMContentLoaded', async () => {
     assert(response.ok, 'Native API request failed'); return response;
   };
   try {
-    await wait(() => document.querySelectorAll('.variant').length === 1 &&
-      !document.querySelector('.provider').disabled, 'App initialization timed out');
+    await wait(() => document.body.dataset.ready === 'true', 'App initialization timed out');
+    assert(document.querySelector('.provider').disabled && document.querySelector('.provider').value === '', 'Unconfigured services must not be selectable');
+    assert(document.querySelectorAll('.provider option[value=demo]').length === 0, 'Tone fixture must stay hidden');
     assert(typeof require === 'undefined' && typeof process === 'undefined', 'Unexpected Node access');
     assert(!document.querySelector('#window-controls').hidden, 'Desktop controls missing');
     const state = await (await api('/api/state')).json();
@@ -46,10 +47,14 @@ window.addEventListener('DOMContentLoaded', async () => {
     await wait(async () => (await window.ttsDesktop.getWindowState()).maximized, 'Maximize failed');
     await window.ttsDesktop.toggleMaximize();
     checks.push('native window controls');
-    document.querySelector('.save-preset').click();
-    document.querySelector('#preset-name').value = 'Native smoke preset';
-    document.querySelector('#confirm-save').click();
-    await wait(() => !document.querySelector('#save-dialog').open && document.querySelector('.preset').value, 'Preset save failed');
+    const savedResponse = await fetch(window.ttsDesktop.apiUrl('/api/presets'), {
+      method: 'POST', headers: {'Content-Type': 'application/json', 'X-Local-Token': state.token},
+      body: JSON.stringify({name: 'Native smoke preset', provider: 'openai', params: {}}),
+    });
+    assert(savedResponse.status === 201, 'Preset persistence fixture failed');
+    const saved = await savedResponse.json();
+    assert((await (await api('/api/presets')).json()).presets.some(p => p.id === saved.id), 'Persisted preset missing');
+    checks.push('empty available-service state', 'preset persistence without cloud calls');
     const openDemo = async (text, variants) => {
       const response = await fetch(window.ttsDesktop.apiUrl('/api/batches'), {
         method: 'POST', headers: {'Content-Type': 'application/json', 'X-Local-Token': state.token},
