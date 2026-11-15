@@ -2,7 +2,7 @@
 param([Parameter(Mandatory=$true)][string]$Bundle,
       [Parameter(Mandatory=$true)][string]$Installer,
       [Parameter(Mandatory=$true)][string]$PortableZIP,
-      [ValidateSet('0.6.0', '0.7.0', '0.8.0')][string]$BaselineVersion = '0.6.0')
+      [ValidateSet('0.6.0', '0.7.0', '0.8.0', '0.9.0')][string]$BaselineVersion = '0.6.0')
 $ErrorActionPreference = 'Stop'
 $Bundle = (Resolve-Path -LiteralPath $Bundle).Path
 $Installer = (Resolve-Path -LiteralPath $Installer).Path
@@ -36,6 +36,10 @@ $baselineHashes = @{
     '0.8.0' = @{
         Installer = '3d3b65c88136ba5aff03a516049ae59912bfed108b2e22e216fdf22d3951e324'
         Portable = '701519975c2ec6891bb6c36f1dd6b7beeba2f15d27023f58cf3e00bd3cb8526a'
+    }
+    '0.9.0' = @{
+        Installer = '1abae4a31d793cdbfa360d3057a28b4d8ce47b17f9e69cb58e35bfffd808f21f'
+        Portable = 'd1e778681ed4d8925227c636f949eeafbfd098d330dba4e9f67fecd675f71f41'
     }
 }
 $legacyInstallerSHA = $baselineHashes[$BaselineVersion].Installer

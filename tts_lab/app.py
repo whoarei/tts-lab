@@ -202,7 +202,7 @@ async def generate(run: dict):
 
 @app.get("/api/state")
 def state():
-    return {"token": TOKEN, "providers": public_catalog(), "references": reference_audio.list_references(), "version": "0.9.0", "desktop": DESKTOP}
+    return {"token": TOKEN, "providers": public_catalog(), "references": reference_audio.list_references(), "version": "0.10.0", "desktop": DESKTOP}
 
 
 @app.get('/api/activity')

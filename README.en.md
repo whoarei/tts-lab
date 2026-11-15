@@ -16,7 +16,7 @@ TTS Lab is a text-to-speech workbench that runs on your computer. Enter text, ch
 - **Blind listening and subjective ratings**: Randomize sample order and hide configuration identities. Rate naturalness, pronunciation accuracy, emotional expression, and suitability for your use case, and add listening notes.
 - **Generation metrics**: View generation time and file size. WAV output also provides audio duration and the real-time factor (RTF).
 - **Local history and exports**: Save text, settings, audio, and ratings locally. Revisit previous comparisons, download individual audio files, export a batch as ZIP, or export records as CSV.
-- **Desktop updates**: Check for and download updates in the app, then install and restart after verification. Personal settings, models, and history are preserved.
+- **Version and desktop updates**: View the current version and check for or download updates on the About page, then install and restart after verification. Personal settings, models, and history are preserved.
 - **Minimal interface**: Sidebar navigation, matching editor heights and collapsible history. Non-speech test tones are reserved for automated verification.
 
 ## Screenshots
@@ -36,3 +36,7 @@ Screenshots show the Chinese interface.
 This offline test-tone demo shows audio playback, generation metrics, and export controls.
 
 ![Playback results and export controls for offline test tones](docs/screenshots/results.png)
+
+### About and App Updates
+
+![Current version and app updates](docs/screenshots/about.png)

@@ -101,6 +101,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     assert(credential.value === '' && credential.type === 'password', 'Stored key must never populate the dialog');
     document.querySelector('#credential-cancel').click();
     checks.push('native credential dialog save, input visibility and no secret readback');
+    document.querySelector('[data-view=about]').click();
+    assert(!document.querySelector('#about-panel').hidden, 'About page missing');
+    assert(document.querySelector('#app-version').textContent === 'v' + state.version, 'About version mismatch');
+    assert(!document.querySelector('#app-update-panel').hidden, 'About updates missing');
     const updateState = await invoke('get_update_state');
     assert(updateState.current_version === state.version && ['installed', 'portable'].includes(updateState.distribution), 'Native update state mismatch');
     assert(window.__TTS_UPDATES_AUTO__ === false, 'Offline native smoke must not auto-check public updates');

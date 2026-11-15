@@ -17,18 +17,19 @@ const samples = [
 const studio = blind => ({variants: [], text: samples[0][1], blind,
   runs: [], batch: '', order: [], drafts: {}, message: '', error: false, autoplay: false});
 const S = {desktop: false, token: '', providers: [], presets: [], view: 'test', busy: false,
-  references: [], modelBusy: false, updating: false,
+  references: [], version: '', activityBusy: false, modelBusy: false, updating: false,
   activeMode: '', test: studio(false), compare: studio(true), saveTarget: null, playback: null};
 Object.defineProperty(S, 'saving', {get: () => [...S.test.variants, ...S.compare.variants].some(v => v.saving)});
 const apiUrl = path => window.ttsDesktop?.apiUrl ? window.ttsDesktop.apiUrl(path) : path;
 let modelTimer;
+const isStudioView = (view = S.view) => view === 'test' || view === 'compare';
 
 function notice(message = '', error = false) {
   const box = $('#notice');
   box.textContent = message;
   box.hidden = !message;
   box.classList.toggle('error', error);
-  if (S.view !== 'models') Object.assign(S[S.view], {message, error});
+  if (isStudioView()) Object.assign(S[S.view], {message, error});
 }
 async function api(path, options = {}) {
   if (S.updating && !['GET', 'HEAD', 'OPTIONS'].includes((options.method || 'GET').toUpperCase())) throw new Error('正在安装应用更新，请等待应用重新启动。');
@@ -138,7 +139,7 @@ function validEditor(v) {
   return true;
 }
 function renderVariants() {
-  if (S.view === 'models') { updateRunbar(); return; }
+  if (!isStudioView()) { updateRunbar(); return; }
   const mode = S[S.view];
   const root = $('#variants');
   root.replaceChildren();
@@ -261,7 +262,7 @@ async function savePreset(v, newName) {
 }
 function updateCount() {
   $('#text-count').textContent = `${Array.from($('#text').value).length} / 2000`;
-  if (S.view !== 'models') S[S.view].text = $('#text').value;
+  if (isStudioView()) S[S.view].text = $('#text').value;
   for (const node of $('#samples').children) node.classList.toggle('active', node.dataset.text === $('#text').value);
   updateRunbar();
 }
@@ -297,8 +298,8 @@ function captureScores(mode) {
   }
 }
 function showView(view) {
-  if (!['test', 'compare', 'models'].includes(view)) return;
-  if (S.view !== 'models') {
+  if (!['test', 'compare', 'models', 'about'].includes(view)) return;
+  if (isStudioView()) {
     if (S.view !== view) S[S.view].autoplay = false;
     S[S.view].text = $('#text').value;
     captureScores(S[S.view]);
@@ -306,15 +307,21 @@ function showView(view) {
   S.view = view;
   S.playback = null;
   clearTimeout(modelTimer);
+  clearTimeout(activityTimer);
   document.querySelectorAll('[data-view]').forEach(node => {
     node.classList.toggle('active', node.dataset.view === view);
     if (node.dataset.view === view) node.setAttribute('aria-current', 'page');
     else node.removeAttribute('aria-current');
   });
-  $('#page-title').textContent = {test: '文本测试', compare: '方案对比', models: '模型配置'}[view];
-  $('#studio-view').hidden = view === 'models';
+  $('#page-title').textContent = {test: '文本测试', compare: '方案对比', models: '模型配置', about: '关于'}[view];
+  $('#studio-view').hidden = !isStudioView(view);
   $('#local-model-panel').hidden = view !== 'models';
+  $('#about-panel').hidden = view !== 'about';
   document.querySelectorAll('audio').forEach(audio => audio.pause());
+  if (view === 'about') {
+    $('#notice').hidden = true;
+    renderAboutVersion(); void refreshAboutActivity(); return;
+  }
   if (view === 'models') {
     $('#notice').hidden = true;
     renderCloudModels(); void refreshModels(); return;
@@ -374,7 +381,7 @@ function renderScores(card, run, mode) {
   actions.append(save, status); details.append(actions); card.append(details);
 }
 function renderResults() {
-  if (S.view === 'models') return;
+  if (!isStudioView()) return;
   const mode = S[S.view], root = $('#results'), blind = mode.blind;
   captureScores(mode);
   root.classList.toggle('comparison', S.view === 'compare');
@@ -475,7 +482,7 @@ async function poll(view, batch) {
   if ($('#history-panel').open) void history();
 }
 async function listen() {
-  if (S.busy || S.updating || C.saving || S.saving || S.view === 'models') return;
+  if (S.busy || S.updating || C.saving || S.saving || !isStudioView()) return;
   notice();
   const view = S.view, mode = S[view], text = $('#text').value.trim();
   if (!text) { notice('请先输入要朗读的文本。', true); return; }
@@ -532,8 +539,19 @@ async function history() {
       desc.append(el('b', `${new Date(runs[0].created_at).toLocaleString()} · ${runs.length} 组`),
         el('p', runs[0].text.slice(0, 65) + (runs[0].text.length > 65 ? '…' : '')));
       const open = button('打开', 'secondary', () => {
-        if (S.busy) return;
+        if (S.busy || S.updating) return;
         const view = runs.length === 1 ? 'test' : 'compare', mode = S[view];
+        // showView captures the active editor before switching. Replace its
+        // text first when reopening history in that same view.
+        if (S.view === view) $('#text').value = runs[0].text;
+        mode.text = runs[0].text;
+        if (runs.every(run => provider(run.provider))) {
+          mode.variants = [...runs].sort((a, b) => a.created_at.localeCompare(b.created_at))
+            .map(run => makeVariant(run.provider, run.params));
+        }
+        // Retired providers (including legacy tone fixtures) stay playable;
+        // do not add an unavailable service to the parameter picker.
+        mode.message = ''; mode.error = false; mode.autoplay = false;
         mode.runs = runs; mode.batch = id; mode.order = shuffle(runs.map(run => run.id));
         $('#history-panel').open = false; showView(view);
         $('#results-section').scrollIntoView({behavior: 'smooth'});
@@ -613,7 +631,7 @@ async function init() {
   try {
     const data = await api('/api/state');
     S.token = data.token; S.providers = data.providers.filter(p => p.family !== 'demo'); S.desktop = !!data.desktop; S.references = data.references || [];
-    $('#app-version').textContent = `v${data.version}`;
+    S.version = data.version; renderAboutVersion();
     if (S.desktop) $('#config-guide').textContent = '在“文件 → 编辑 API 凭证”中填写服务密钥，保存后选择“重启并载入凭证”。配置与历史保存在本机用户目录，凭证文件为明文，请勿分享。';
     S.presets = (await api('/api/presets')).presets;
     S.test.variants = [makeVariant()];

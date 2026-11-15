@@ -1,5 +1,6 @@
 'use strict';
 const U = {view: null, pending: false};
+let activityTimer;
 const C = {provider: '', loading: false, saving: false, revision: 0};
 function credentialControls() {
   $('#credential-save').disabled = C.loading || C.saving || !C.provider || S.busy || S.modelBusy || S.updating;
@@ -150,11 +151,12 @@ function renderUpdateControls() {
   download.disabled = active;
   download.textContent = view.status === 'error' ? '重试下载' : '下载更新';
   install.hidden = development || !['ready', 'installing'].includes(view.status);
-  install.disabled = active || S.busy || S.saving || C.saving || S.modelBusy;
+  install.disabled = active || S.busy || S.saving || C.saving || S.modelBusy || S.activityBusy;
   install.textContent = view.status === 'installing' ? '正在安装…' : '安装并重启';
+  $('#app-update-install-hint').hidden = !development && !['ready', 'installing'].includes(view.status);
   $('#app-update-install-hint').textContent = development
     ? '开发环境仅检查版本，请从发布页下载安装。'
-    : view.status === 'ready' && (S.busy || S.saving || S.modelBusy)
+    : view.status === 'ready' && (S.busy || S.saving || C.saving || S.modelBusy || S.activityBusy)
       ? '请等待语音生成、方案保存或模型安装完成，再安装更新。个人数据会保留。'
       : '安装会关闭应用、更新程序并重新启动；个人配置、本地模型和历史音频会保留。';
 }
@@ -162,7 +164,11 @@ function renderUpdateView(view) {
   if (!view || typeof view.status !== 'string') return;
   U.view = view;
   const installing = view.status === 'installing';
-  if (S.updating !== installing) { S.updating = installing; lockControls(); }
+  if (S.updating !== installing) {
+    S.updating = installing; lockControls();
+    if (installing) clearTimeout(activityTimer);
+    else if (S.view === 'about') void refreshAboutActivity();
+  }
   const version = view.version ? `v${view.version}` : '';
   const labels = {
     idle: '尚未检查更新。', checking: '正在检查新版本…', current: '当前已是最新版本。',
@@ -171,9 +177,10 @@ function renderUpdateView(view) {
     error: view.error || '更新未完成，请检查网络后重试。',
   };
   const status = $('#app-update-status');
+  status.hidden = view.status === 'idle';
   status.textContent = labels[view.status] || '无法读取更新状态，请重新检查。';
   status.classList.toggle('error', view.status === 'error');
-  $('#app-update-version').textContent = `当前 ${view.current_version ? `v${view.current_version}` : $('#app-version').textContent} · ${{installed: '安装版', portable: '便携版', development: '开发环境'}[view.distribution] || '桌面版'}`;
+  renderAboutVersion();
   const downloaded = Math.max(0, Number(view.downloaded_bytes) || 0), total = Math.max(0, Number(view.total_bytes) || 0);
   const bytes = value => value >= 1048576 ? `${(value / 1048576).toFixed(1)} MiB` : value >= 1024 ? `${(value / 1024).toFixed(1)} KiB` : `${value} B`;
   $('#app-update-progress-wrap').hidden = !['downloading', 'ready'].includes(view.status) && !downloaded;
@@ -183,8 +190,9 @@ function renderUpdateView(view) {
   $('#app-update-bytes').textContent = total > 0 ? `${bytes(downloaded)} / ${bytes(total)}` : `${bytes(downloaded)} 已下载`;
   $('#app-update-notes-wrap').hidden = !view.notes;
   $('#app-update-notes').textContent = typeof view.notes === 'string' ? view.notes : '';
-  const shortcut = $('#updates-shortcut');
-  shortcut.textContent = view.status === 'ready' ? '更新已就绪 ↗' : view.version && ['available', 'downloading'].includes(view.status) ? `新版本 ${version} ↗` : '应用更新 ↗';
+  const available = !!view.version && ['available', 'downloading', 'ready', 'error'].includes(view.status);
+  $('#about-update-indicator').hidden = !available;
+  $('#about-navigation').setAttribute('aria-label', available ? `关于，有新版本 v${view.version}` : '关于');
   renderUpdateControls();
 }
 function updateStorage(key, value) {
@@ -196,7 +204,7 @@ function updateStorage(key, value) {
 }
 async function updateAction(action) {
   if (U.pending || ['checking', 'downloading', 'installing'].includes(U.view?.status)) return;
-  if (action === 'installUpdate' && (U.view?.status !== 'ready' || S.busy || S.saving || C.saving || S.modelBusy)) return;
+  if (action === 'installUpdate' && (U.view?.status !== 'ready' || S.busy || S.saving || C.saving || S.modelBusy || S.activityBusy)) return;
   U.pending = true;
   if (action === 'checkUpdate') updateStorage('ttsLab.updates.lastCheckAt', String(Date.now()));
   renderUpdateView({...U.view, status: {checkUpdate: 'checking', downloadUpdate: 'downloading', installUpdate: 'installing'}[action], error: ''});
@@ -212,8 +220,7 @@ async function updateAction(action) {
 async function setupUpdates() {
   const desktop = window.ttsDesktop;
   if (!desktop?.getUpdateState) return;
-  $('#app-update-panel').hidden = false; $('#updates-shortcut').hidden = false;
-  $('#updates-shortcut').onclick = () => { showView('models'); $('#app-update-panel').scrollIntoView({block: 'start', behavior: 'smooth'}); $('#app-update-title').focus({preventScroll: true}); };
+  $('#app-update-panel').hidden = false; $('#browser-update-links').hidden = true;
   const auto = $('#app-update-auto');
   auto.checked = updateStorage('ttsLab.updates.autoCheck') !== '0';
   auto.onchange = () => updateStorage('ttsLab.updates.autoCheck', auto.checked ? '1' : '0');
@@ -281,4 +288,22 @@ async function setupSettings() {
   window.addEventListener('tts-desktop-error', event => notice(event.detail, true));
   try { await setupDesktop(); } catch { notice('无法读取窗口状态，请稍后重试。', true); }
   void setupUpdates();
+}
+
+function renderAboutVersion() {
+  const version = U.view?.current_version || S.version;
+  $('#app-version').textContent = version ? `v${version}` : '';
+  $('#app-update-version').textContent = {installed: '安装版', portable: '便携版', development: '开发环境'}[U.view?.distribution] || (window.ttsDesktop ? '' : '浏览器版');
+}
+async function refreshAboutActivity() {
+  clearTimeout(activityTimer);
+  if (S.view !== 'about' || !window.ttsDesktop || S.updating) return;
+  try {
+    const activity = await api('/api/activity');
+    if (S.view !== 'about') return;
+    S.activityBusy = !!activity.busy;
+    S.modelBusy = activity.active_installs > 0;
+    renderUpdateControls();
+  } catch { /* Native installation also checks backend activity before applying. */ }
+  if (S.view === 'about' && !S.updating) activityTimer = setTimeout(refreshAboutActivity, 2000);
 }

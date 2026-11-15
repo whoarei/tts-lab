@@ -18,6 +18,7 @@ backend = 'http://127.0.0.1:8765'
 api_origin = 'http://tts-api.localhost'
 output = Path(os.environ.get('TTS_LAB_SCREENSHOTS', '/tmp'))
 output.mkdir(parents=True, exist_ok=True)
+expected_version = json.loads((Path(__file__).resolve().parents[1] / 'package.json').read_text())['version']
 
 with sync_playwright() as p:
     launch = {'headless': True}
@@ -26,9 +27,12 @@ with sync_playwright() as p:
     browser = p.chromium.launch(**launch)
     ordinary = browser.new_page()
     ordinary.goto(backend)
-    ordinary.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
+    ordinary.wait_for_function("() => !!document.querySelector('.variant .provider') && !document.querySelector('.variant .provider').disabled")
     assert ordinary.locator('#app-update-panel').is_hidden()
-    assert ordinary.locator('#updates-shortcut').is_hidden()
+    ordinary.click('[data-view=about]')
+    assert ordinary.locator('#about-panel').is_visible()
+    assert ordinary.locator('#app-version').inner_text() == 'v' + expected_version
+    assert ordinary.locator('#browser-update-links').is_visible()
     assert ordinary.evaluate('window.ttsDesktop === undefined')
     ordinary.close()
     context = browser.new_context(viewport={'width': 1360, 'height': 960})
@@ -36,12 +40,13 @@ with sync_playwright() as p:
     errors, requests = [], []
     hold_generations = False
     held_routes = []
+    active_model = False
     page.on('pageerror', lambda error: errors.append(str(error)))
 
     page.add_init_script("""window.__TTS_API_ORIGIN__ = 'http://tts-api.localhost';
       window.__NATIVE_CALLS__ = [];
       window.__NATIVE_EVENTS__ = {};
-      window.__UPDATE_VIEW__ = {status: 'idle', current_version: '0.6.0', downloaded_bytes: 0, total_bytes: 0, distribution: 'portable'};
+      window.__UPDATE_VIEW__ = {status: 'idle', current_version: '__TEST_VERSION__', downloaded_bytes: 0, total_bytes: 0, distribution: 'portable'};
       window.__EMIT_UPDATE__ = (patch) => {
         window.__UPDATE_VIEW__ = {...window.__UPDATE_VIEW__, ...patch};
         window.__NATIVE_EVENTS__['desktop:update-state']?.({payload: {...window.__UPDATE_VIEW__}});
@@ -57,7 +62,7 @@ with sync_playwright() as p:
           if (command === 'check_update') {
             if (window.__CHECK_CURRENT__) return window.__EMIT_UPDATE__({status: 'current', version: '', notes: '', error: ''});
             if (window.__CHECK_ERROR__) throw '网络连接失败，请稍后重试。';
-            return window.__EMIT_UPDATE__({status: 'available', version: '0.7.0', notes: '<img src=x onerror=alert(1)>\\n新增在线更新', error: '', downloaded_bytes: 0, total_bytes: 4096});
+            return window.__EMIT_UPDATE__({status: 'available', version: '99.0.0', notes: '<img src=x onerror=alert(1)>\\n新增在线更新', error: '', downloaded_bytes: 0, total_bytes: 4096});
           }
           if (command === 'download_update') {
             window.__EMIT_UPDATE__({status: 'downloading', downloaded_bytes: 128, total_bytes: 4096, error: ''});
@@ -69,7 +74,7 @@ with sync_playwright() as p:
           }
         }},
         event: {listen: async (name, callback) => { window.__NATIVE_EVENTS__[name] = callback; return () => { delete window.__NATIVE_EVENTS__[name]; }; }}
-      };""")
+      };""".replace('__TEST_VERSION__', expected_version))
 
     def document_route(route):
         response = route.fetch()
@@ -94,6 +99,9 @@ with sync_playwright() as p:
                    if key.lower() not in {'host', 'origin', 'sec-fetch-site'}}
         response = route.fetch(url=backend + parsed.path + ('?' + parsed.query if parsed.query else ''),
                                headers=headers)
+        if parsed.path == '/api/activity' and active_model:
+            route.fulfill(status=200, headers=cors, json={'busy': True, 'active_runs': 0, 'active_installs': 1})
+            return
         if hold_generations and request.method == 'GET' and parsed.path == '/api/runs':
             data = response.json()
             response_headers = {key: value for key, value in response.headers.items()
@@ -105,13 +113,18 @@ with sync_playwright() as p:
     context.route(backend + '/', document_route)
     context.route(api_origin + '/**', protocol_route)
     page.goto(backend)
-    page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
+    page.wait_for_function("() => !!document.querySelector('.variant .provider') && !document.querySelector('.variant .provider').disabled")
     assert page.locator('#window-controls').is_visible()
+    page.click('[data-view=about]')
+    assert page.locator('#about-panel').is_visible()
+    assert page.locator('#app-update-panel').is_visible()
+    assert page.locator('#browser-update-links').is_hidden()
+    assert page.locator('#app-version').inner_text() == 'v' + expected_version
+    assert page.locator('#app-update-auto').is_checked()
+    assert page.locator('#app-update-status').is_hidden()
     page.click('[data-view=models]')
     assert page.locator('#desktop-settings').is_visible()
-    assert page.locator('#app-update-panel').is_visible()
-    assert page.locator('#app-update-auto').is_checked()
-    assert '尚未检查' in page.locator('#app-update-status').inner_text()
+    assert page.locator('#app-update-panel').is_hidden()
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'check_update')")
     page.click('[data-provider=deepseek]')
     page.wait_for_selector('#credential-DEEPSEEK_API_KEY')
@@ -168,10 +181,12 @@ with sync_playwright() as p:
     calls = page.evaluate('window.__NATIVE_CALLS__')
     assert any(command == 'desktop_action' and args['action'] == 'startDragging' for command, args in calls)
     # Update checks and downloads are separate, and release notes remain text.
-    page.click('#updates-shortcut')
+    page.click('[data-view=about]')
     page.click('#check-app-update')
     page.wait_for_function("() => document.querySelector('#app-update-status').textContent.includes('发现新版本')")
-    assert 'v0.7.0' in page.locator('#app-update-status').inner_text()
+    assert 'v99.0.0' in page.locator('#app-update-status').inner_text()
+    assert page.locator('#about-update-indicator').is_visible()
+    assert '有新版本' in page.locator('#about-navigation').get_attribute('aria-label')
     assert '<img src=x onerror=alert(1)>' in page.locator('#app-update-notes').text_content()
     assert page.locator('#app-update-notes img').count() == 0
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => ['download_update', 'install_update'].includes(call[0]))")
@@ -192,7 +207,7 @@ with sync_playwright() as p:
     page.evaluate("window.__EMIT_UPDATE__({distribution: 'portable'})")
     assert '便携版' in page.locator('#app-update-version').inner_text()
     page.locator('#app-update-notes-wrap').evaluate('(node) => { node.open = true; }')
-    page.locator('#app-update-panel').screenshot(path=str(output / 'tts-tauri-update-panel.png'))
+    page.locator('#about-panel').screenshot(path=str(output / 'tts-tauri-update-panel.png'))
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'install_update')")
     # Native state can become ready while generation is active. Even a scripted
     # click must not dispatch install until the active work finishes.
@@ -200,7 +215,7 @@ with sync_playwright() as p:
     hold_generations = True
     page.locator('.provider').select_option('local_kokoro')
     page.click('#generate')
-    page.click('[data-view=models]')
+    page.click('[data-view=about]')
     assert page.locator('#install-app-update').is_disabled()
     assert '请等待' in page.locator('#app-update-install-hint').inner_text()
     page.locator('#install-app-update').dispatch_event('click')
@@ -210,6 +225,11 @@ with sync_playwright() as p:
         route.fulfill(response=response, headers={**response.headers, **cors})
     held_routes.clear()
     page.wait_for_function("() => !document.querySelector('#generate').disabled && !document.querySelector('#install-app-update').disabled")
+    # Finishing a model install must re-enable updates while About stays open.
+    active_model = True
+    page.wait_for_function("() => document.querySelector('#install-app-update').disabled")
+    active_model = False
+    page.wait_for_function("() => !document.querySelector('#install-app-update').disabled")
     page.evaluate("window.__EMIT_UPDATE__({status: 'error', error: '下载中断，请重试。'})")
     assert page.locator('#download-app-update').inner_text() == '重试下载'
     assert page.locator('#install-app-update').is_hidden()
@@ -221,6 +241,7 @@ with sync_playwright() as p:
     page.click('#check-app-update')
     page.wait_for_function("() => document.querySelector('#app-update-status').textContent.includes('最新版本')")
     assert page.locator('#download-app-update').is_hidden() and page.locator('#install-app-update').is_hidden()
+    assert page.locator('#about-update-indicator').is_hidden()
     page.evaluate('window.__CHECK_CURRENT__ = false; window.__CHECK_ERROR__ = true')
     page.click('#check-app-update')
     page.wait_for_function("() => document.querySelector('#check-app-update').textContent === '重试检查'")
@@ -269,20 +290,20 @@ with sync_playwright() as p:
     # Daily startup checking is gated by the native production flag and a user
     # preference. Reloading within 24 hours never repeats the automatic check.
     page.evaluate("localStorage.setItem('test.updates.autoEnabled', '0'); localStorage.removeItem('ttsLab.updates.lastCheckAt'); localStorage.removeItem('ttsLab.updates.autoCheck')")
-    page.reload(); page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
+    page.reload(); page.wait_for_function("() => !!document.querySelector('.variant .provider') && !document.querySelector('.variant .provider').disabled")
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'check_update')")
     page.evaluate("localStorage.setItem('test.updates.autoEnabled', '1'); localStorage.setItem('ttsLab.updates.autoCheck', '0')")
-    page.reload(); page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
+    page.reload(); page.wait_for_function("() => !!document.querySelector('.variant .provider') && !document.querySelector('.variant .provider').disabled")
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'check_update')")
-    page.click('[data-view=models]')
+    page.click('[data-view=about]')
     assert not page.locator('#app-update-auto').is_checked()
     page.check('#app-update-auto')
-    page.reload(); page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
+    page.reload(); page.wait_for_function("() => !!document.querySelector('.variant .provider') && !document.querySelector('.variant .provider').disabled")
     page.wait_for_function("() => window.__NATIVE_CALLS__.filter(call => call[0] === 'check_update').length === 1")
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => ['download_update', 'install_update'].includes(call[0]))")
-    page.reload(); page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
+    page.reload(); page.wait_for_function("() => !!document.querySelector('.variant .provider') && !document.querySelector('.variant .provider').disabled")
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'check_update')")
-    page.click('[data-view=models]')
+    page.click('[data-view=about]')
     page.click('#check-app-update')
     page.wait_for_function("() => window.__NATIVE_CALLS__.filter(call => call[0] === 'check_update').length === 1")
     assert not errors, errors

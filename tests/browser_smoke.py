@@ -5,6 +5,7 @@ CHROMIUM_PATH=/usr/bin/chromium python tests/browser_smoke.py
 The temporary backend never reads .env or downloads models. Its Kokoro adapter
 returns a silent WAV fixture; these checks verify UI behavior, not TTS quality.
 """
+import json
 import os
 from pathlib import Path
 import socket
@@ -100,6 +101,7 @@ def check_ui(origin, data_dir):
         presets = page.request.get(origin + '/api/presets').json()['presets']
         assert len(presets) == 1 and presets[0]['params']['speed'] == 1.1
         runs = page.request.get(origin + '/api/runs').json()['runs']
+        original_run = runs[0]
         assert runs[0]['params']['speed'] == 1.2
         assert runs[0]['params']['voice'] == 19
         # The single action synthesizes if needed, then starts playback itself.
@@ -161,6 +163,12 @@ def check_ui(origin, data_dir):
         page.select_option('#local-device', 'cuda')
         page.select_option('#local-device', 'cpu')
         page.screenshot(path=str(output / 'models.png'), full_page=True)
+        page.click('[data-view="about"]')
+        assert page.locator('#about-panel').is_visible()
+        assert page.locator('#app-version').inner_text() == 'v' + page.request.get(origin + '/api/state').json()['version']
+        assert page.locator('#app-update-panel').is_hidden()
+        assert page.locator('#browser-update-links').is_visible()
+        assert page.locator('.app-sidebar #app-version').count() == 0
         page.click('[data-view="test"]')
         assert page.locator('#text').input_value() == '这段文字在切换页面后仍然保留。'
         page.fill('#text', '')
@@ -204,13 +212,45 @@ def check_ui(origin, data_dir):
         with page.expect_download() as download:
             page.click('#download-batch')
         download.value.save_as(str(output / 'batch.zip'))
+        recent = page.request.get(origin + '/api/runs').json()['runs']
+        comparison_runs = sorted((run for run in recent if run['batch_id'] == recent[0]['batch_id']),
+                                 key=lambda run: run['created_at'])
+        presets_before_history = page.request.get(origin + '/api/presets').json()['presets']
+        # Opening history replaces the current text and editor settings, without
+        # attaching the restored draft to a saved preset or changing its files.
+        page.fill('#text', '这些是尚未保存的编辑内容。')
+        page.locator('.variant .provider').first.select_option('azure')
         page.click('#history-panel > summary')
         page.wait_for_selector('.history-row')
         assert page.locator('.history-row').count() == 4
         page.locator('.history-row button').last.click()
         assert page.locator('#page-title').inner_text() == '文本测试'
         assert page.locator('audio').count() == 1
+        assert page.locator('#text').input_value() == original_run['text']
+        assert page.locator('.provider').input_value() == original_run['provider']
+        assert speed.input_value() == str(original_run['params']['speed'])
+        assert voice.input_value() == str(original_run['params']['voice'])
+        assert page.locator('.preset').input_value() == ''
+        speed.fill('1.7')
+        page.click('[data-view="about"]')
+        page.click('[data-view="test"]')
+        assert json.loads(page.locator('.result-card pre').first.text_content())['speed'] == original_run['params']['speed']
+        assert page.request.get(origin + '/api/runs/' + original_run['id']).json()['params'] == original_run['params']
         page.click('[data-view="compare"]')
+        assert page.locator('#text').input_value() == '这些是尚未保存的编辑内容。'
+        page.click('#history-panel > summary')
+        page.wait_for_selector('.history-row')
+        page.locator('.history-row button').first.click()
+        assert page.locator('#page-title').inner_text() == '方案对比'
+        assert page.locator('#text').input_value() == comparison_runs[0]['text']
+        assert page.locator('.variant .provider').evaluate_all('(nodes) => nodes.map(n => n.value)') == [run['provider'] for run in comparison_runs]
+        restored = page.locator('.variant').evaluate_all('''(cards) => cards.map(card =>
+            Object.fromEntries(Array.from(card.querySelectorAll('[data-param]')).map(input =>
+                [input.dataset.param, input.type === 'checkbox' ? input.checked :
+                    input.type === 'number' ? Number(input.value) : input.value])))''')
+        assert restored == [run['params'] for run in comparison_runs]
+        assert page.locator('.preset').evaluate_all('(nodes) => nodes.every(n => n.value === "")')
+        assert page.request.get(origin + '/api/presets').json()['presets'] == presets_before_history
         for _ in range(4):
             page.click('#add-variant')
         assert page.locator('.variant').count() == 6
@@ -227,7 +267,7 @@ def check_ui(origin, data_dir):
         assert len(page.request.get(origin + '/api/runs').json()['runs']) == before
         for width, height in [(1280, 800), (880, 700), (390, 844)]:
             page.set_viewport_size({'width': width, 'height': height})
-            for view in ['test', 'compare', 'models']:
+            for view in ['test', 'compare', 'models', 'about']:
                 page.click(f'[data-view="{view}"]')
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), (width, view)
                 if width == 390:

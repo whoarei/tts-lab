@@ -25,8 +25,9 @@
       <button class="nav-item" data-view="compare"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h5v16H4zM15 4h5v16h-5z"/></svg><span>方案对比</span></button>
       <button class="nav-item" data-view="models" id="open-local-models"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></svg><span>模型配置</span></button>
     </nav>
-    <button id="updates-shortcut" class="text-button" hidden>应用更新 ↗</button>
-    <span id="app-version" class="app-version"></span>
+    <nav class="sidebar-bottom" aria-label="应用">
+      <button id="about-navigation" class="nav-item" data-view="about"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.1"/></svg><span>关于</span><span id="about-update-indicator" class="update-dot" aria-hidden="true" hidden></span></button>
+    </nav>
   </aside>
   <main aria-labelledby="page-title">
     <h1 id="page-title" class="sr-only">文本测试</h1>
@@ -62,15 +63,19 @@
       <div class="section-title cloud-title"><h2>云端服务</h2><div id="desktop-settings" class="push" hidden><button id="open-data-directory" class="text-button">打开配置目录 ↗</button></div></div>
       <div id="cloud-services" class="cloud-model-list"></div>
       <details class="help-details"><summary>API 凭证配置</summary><p id="config-guide">将项目根目录的 .env.example 复制为 .env，填写服务密钥后重启程序。</p><p>配置状态仅表示已检测到凭证，账号权限、模型与音色的可用性在首次生成时验证。</p></details>
+
+    </section>
+    <section id="about-panel" hidden aria-labelledby="about-title">
+      <div class="about-identity"><img class="about-icon" src="/static/icon.svg" alt=""><div><h2 id="about-title">TTS Lab</h2><div class="about-version"><span id="app-version"></span><span id="app-update-version">浏览器版</span></div></div></div>
+      <div id="browser-update-links" class="settings-actions"><a href="https://github.com/whoarei/tts-lab/releases/latest" target="_blank" rel="noreferrer" class="secondary">查看新版本 ↗</a></div>
         <section id="app-update-panel" class="panel update-panel" aria-labelledby="app-update-title" hidden>
-          <div class="section-title"><h2 id="app-update-title" tabindex="-1">应用更新</h2><span id="app-update-version"></span><button id="check-app-update" class="secondary push">检查更新</button></div>
+          <div class="section-title"><h2 id="app-update-title" tabindex="-1">应用更新</h2><button id="check-app-update" class="secondary push">检查更新</button></div>
           <p id="app-update-status" class="hint" role="status" aria-live="polite">尚未检查更新。</p>
           <div id="app-update-progress-wrap" hidden><progress id="app-update-progress" aria-label="应用更新下载进度"></progress><p id="app-update-bytes" class="hint"></p></div>
           <details id="app-update-notes-wrap" hidden><summary>版本说明</summary><pre id="app-update-notes"></pre></details>
           <div class="settings-actions"><button id="download-app-update" class="secondary" hidden>下载更新</button><button id="install-app-update" class="primary" hidden>安装并重启</button><a href="https://github.com/whoarei/tts-lab/releases" target="_blank" rel="noreferrer" class="text-button">查看发布页 ↗</a></div>
-          <p id="app-update-install-hint" class="hint">安装会关闭应用、更新程序并重新启动；个人配置、本地模型和历史音频会保留。</p>
-          <label class="check update-auto"><input id="app-update-auto" type="checkbox" checked>启动时检查更新（每天最多一次，不自动下载或安装）</label>
-          <p class="hint">检查与下载更新需要联网。</p>
+          <p id="app-update-install-hint" class="hint" hidden>安装会关闭应用、更新程序并重新启动；个人配置、本地模型和历史音频会保留。</p>
+          <label class="check update-auto"><input id="app-update-auto" type="checkbox" checked>启动时检查更新</label>
         </section>
     </section>
   </main>
