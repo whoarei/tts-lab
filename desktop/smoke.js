@@ -15,8 +15,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     assert(response.ok, 'Native API request failed'); return response;
   };
   try {
-    await wait(() => document.querySelectorAll('.variant').length === 2 &&
-      !document.querySelector('#test-variant').disabled, 'App initialization timed out');
+    await wait(() => document.querySelectorAll('.variant').length === 1 &&
+      !document.querySelector('.provider').disabled, 'App initialization timed out');
     assert(typeof require === 'undefined' && typeof process === 'undefined', 'Unexpected Node access');
     assert(!document.querySelector('#window-controls').hidden, 'Desktop controls missing');
     const state = await (await api('/api/state')).json();
@@ -46,14 +46,26 @@ window.addEventListener('DOMContentLoaded', async () => {
     await wait(async () => (await window.ttsDesktop.getWindowState()).maximized, 'Maximize failed');
     await window.ttsDesktop.toggleMaximize();
     checks.push('native window controls');
-    document.querySelector('#test-generate').click();
-    await wait(() => document.querySelectorAll('#test-results-slot audio').length === 1 &&
-      !document.querySelector('#test-generate').disabled, 'Single generation failed');
-    document.querySelector('[data-page=compare]').click();
-    document.querySelector('#compare-generate').click();
-    await wait(() => document.querySelectorAll('#compare-results-slot audio').length === 2 &&
-      !document.querySelector('#compare-generate').disabled, 'Comparison failed');
-    const audio = document.querySelector('#compare-results-slot audio');
+    document.querySelector('.save-preset').click();
+    document.querySelector('#preset-name').value = 'Native smoke preset';
+    document.querySelector('#confirm-save').click();
+    await wait(() => !document.querySelector('#save-dialog').open && document.querySelector('.preset').value, 'Preset save failed');
+    const openDemo = async (text, variants) => {
+      const response = await fetch(window.ttsDesktop.apiUrl('/api/batches'), {
+        method: 'POST', headers: {'Content-Type': 'application/json', 'X-Local-Token': state.token},
+        body: JSON.stringify({text, variants}),
+      });
+      assert(response.status === 202, 'Offline fixture submission failed');
+      const batch = await response.json();
+      await wait(async () => (await Promise.all(batch.runs.map(async r => (await (await api('/api/runs/' + r.id)).json()).status))).every(s => s === 'completed'), 'Offline fixtures incomplete');
+      document.querySelector('#history-panel').open = true;
+      await wait(() => Array.from(document.querySelectorAll('.history-row')).some(row => row.textContent.includes(text)), 'Inline history did not load');
+      Array.from(document.querySelectorAll('.history-row')).find(row => row.textContent.includes(text)).querySelector('button').click();
+      await wait(() => document.querySelectorAll('#results audio').length === variants.length, 'Historical audio did not load');
+    };
+    await openDemo('native-single-fixture', [{provider: 'demo'}]);
+    await openDemo('native-compare-fixture', [{provider: 'demo'}, {provider: 'demo', params: {frequency: 660}}]);
+    const audio = document.querySelector('#results audio');
     audio.muted = true;
     await wait(() => audio.readyState >= 1 && audio.duration === 1.5, 'Audio protocol metadata failed');
     await audio.play();
@@ -62,7 +74,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     assert(runs.length === 3 && runs.every(r => r.provider === 'demo' && r.status === 'completed'), 'Offline history mismatch');
     checks.push('single scheme generation', 'two scheme comparison', 'audio metadata and muted playback', 'persistent history');
     const invoke = window.__TAURI__.core.invoke;
-    const batchPath = document.querySelector('#compare-results-slot .download-batch').getAttribute('href');
+    const batchPath = document.querySelector('#download-batch').getAttribute('href');
     assert(await invoke('save_export', {route: batchPath}), 'ZIP export failed');
     assert(await invoke('save_export', {route: '/api/export.csv'}), 'CSV export failed');
     assert(await invoke('save_export', {route: `/api/runs/${runs[0].id}/audio`}), 'Audio export failed');
@@ -70,7 +82,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       let rejected = false; try { await invoke(command, args); } catch { rejected = true; }
       assert(rejected, 'Native boundary accepted invalid request');
     }
-    document.querySelector('[data-page=models]').click();
+    document.querySelector('[data-view=models]').click();
     await wait(() => document.querySelectorAll('.model-card').length === 6, 'Model page failed');
     document.querySelector('[data-provider=deepseek]').click();
     await wait(() => document.querySelector('#credential-DEEPSEEK_API_KEY'), 'Credential dialog failed');

@@ -222,6 +222,73 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(runs), 2)
 
 
+    async def test_presets_create_update_and_save_as_without_credentials(self):
+        body = {"name": "日常朗读", "provider": "openai", "params": {"voice": "coral"}}
+        with patch.dict("os.environ", {"OPENAI_API_KEY": ""}), patch.object(module, "synthesize") as synth:
+            response = await self.client.post("/api/presets", json=body, headers=self.headers)
+            self.assertEqual(response.status_code, 201, response.text)
+            original = response.json()
+            self.assertEqual(original["params"]["speed"], 1)
+            self.assertEqual((await self.client.get("/api/presets")).json()["presets"], [original])
+            body["params"]["speed"] = 1.2
+            updated = await self.client.put(f"/api/presets/{original['id']}", json=body, headers=self.headers)
+            self.assertEqual(updated.status_code, 200)
+            self.assertEqual(updated.json()["id"], original["id"])
+            body["name"] = "更慢的副本"
+            body["params"]["speed"] = .8
+            copy = await self.client.post("/api/presets", json=body, headers=self.headers)
+            self.assertNotEqual(copy.json()["id"], original["id"])
+            # Fresh reads use persisted files; a copy never mutates its source.
+            saved = {p["id"]: p for p in (await self.client.get("/api/presets")).json()["presets"]}
+            self.assertEqual(saved[original["id"]]["params"]["speed"], 1.2)
+            self.assertEqual(saved[copy.json()["id"]]["params"]["speed"], .8)
+            self.assertEqual(len(list((module.DATA_DIR / "presets").glob("*.json"))), 2)
+            self.assertEqual((await self.client.get("/api/runs")).json()["runs"], [])
+            synth.assert_not_called()
+
+    async def test_presets_validate_and_protect_writes(self):
+        valid = {"name": "test", "provider": "openai", "params": {}}
+        self.assertEqual((await self.client.post("/api/presets", json=valid)).status_code, 403)
+        invalid = [dict(valid, name="  "), dict(valid, name="a" * 81),
+                   dict(valid, name="bad\nname"), dict(valid, provider="unknown"),
+                   dict(valid, provider="demo"), dict(valid, params={"speed": 9}),
+                   dict(valid, params={"api_key": "must-never-be-saved"})]
+        for body in invalid:
+            response = await self.client.post("/api/presets", json=body, headers=self.headers)
+            self.assertEqual(response.status_code, 422, body)
+        self.assertFalse((module.DATA_DIR / "presets").exists())
+        response = await self.client.put("/api/presets/" + "a" * 32, json=valid, headers=self.headers)
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual((await self.client.put("/api/presets/not-an-id", json=valid, headers=self.headers)).status_code, 404)
+
+    async def test_presets_ignore_incomplete_files(self):
+        folder = module.DATA_DIR / "presets"
+        folder.mkdir()
+        (folder / ("a" * 32 + ".json")).write_text('{"id": "bad"}', encoding="utf-8")
+        (folder / ("b" * 32 + ".json")).write_text('{invalid json', encoding="utf-8")
+        (folder / ("c" * 32 + ".json")).write_text(json.dumps({
+            "id": "c" * 32, "name": "bad metadata", "provider": "openai", "params": {}}), encoding="utf-8")
+        self.assertEqual((await self.client.get("/api/presets")).json(), {"presets": []})
+
+    async def test_upgrade_imports_legacy_schemes_once_without_overwriting(self):
+        legacy = {'variants': [
+            {'uid': 'previous-scheme', 'name': '旧方案', 'provider': 'openai', 'params': {'voice': 'coral'}},
+            {'uid': 'old-demo', 'name': '提示音', 'provider': 'demo', 'params': {}}],
+            'selected_uid': 'previous-scheme'}
+        source = module.DATA_DIR / 'variants.json'
+        source.write_text(json.dumps(legacy), encoding='utf-8')
+        saved = (await self.client.get('/api/presets')).json()['presets']
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0]['name'], '旧方案')
+        saved[0]['params']['voice'] = 'alloy'
+        response = await self.client.put('/api/presets/' + saved[0]['id'], headers=self.headers,
+                                        json={key: saved[0][key] for key in ('name', 'provider', 'params')})
+        self.assertEqual(response.status_code, 200)
+        again = (await self.client.get('/api/presets')).json()['presets']
+        self.assertEqual(len(again), 1)
+        self.assertEqual(again[0]['params']['voice'], 'alloy')
+        self.assertEqual(json.loads(source.read_text()), legacy)
+
 def HTTPExceptionIfAvailable():
     from fastapi import HTTPException
     return HTTPException

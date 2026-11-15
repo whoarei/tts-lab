@@ -26,7 +26,7 @@ with sync_playwright() as p:
     browser = p.chromium.launch(**launch)
     ordinary = browser.new_page()
     ordinary.goto(backend)
-    ordinary.wait_for_function("() => !document.querySelector('#test-variant').disabled")
+    ordinary.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
     assert ordinary.locator('#app-update-panel').is_hidden()
     assert ordinary.locator('#updates-shortcut').is_hidden()
     assert ordinary.evaluate('window.ttsDesktop === undefined')
@@ -35,6 +35,7 @@ with sync_playwright() as p:
     page = context.new_page()
     errors, requests = [], []
     hold_generations = False
+    held_routes = []
     page.on('pageerror', lambda error: errors.append(str(error)))
 
     page.add_init_script("""window.__TTS_API_ORIGIN__ = 'http://tts-api.localhost';
@@ -93,20 +94,20 @@ with sync_playwright() as p:
                    if key.lower() not in {'host', 'origin', 'sec-fetch-site'}}
         response = route.fetch(url=backend + parsed.path + ('?' + parsed.query if parsed.query else ''),
                                headers=headers)
-        if hold_generations and request.method == 'GET' and re.fullmatch(r'/api/runs/[a-f0-9]{32}', parsed.path):
-            data = response.json(); data['status'] = 'running'
+        if hold_generations and request.method == 'GET' and parsed.path == '/api/runs':
+            data = response.json()
             response_headers = {key: value for key, value in response.headers.items()
                                 if key.lower() not in {'content-length', 'content-encoding'}}
-            route.fulfill(status=response.status, body=json.dumps(data), headers={**response_headers, **cors})
+            held_routes.append((route, response, cors))
             return
         route.fulfill(response=response, headers={**response.headers, **cors})
 
     context.route(backend + '/', document_route)
     context.route(api_origin + '/**', protocol_route)
     page.goto(backend)
-    page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
+    page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
     assert page.locator('#window-controls').is_visible()
-    page.click('[data-page=models]')
+    page.click('[data-view=models]')
     assert page.locator('#desktop-settings').is_visible()
     assert page.locator('#app-update-panel').is_visible()
     assert page.locator('#app-update-auto').is_checked()
@@ -118,7 +119,7 @@ with sync_playwright() as p:
     assert page.locator('#credential-DEEPSEEK_API_KEY').get_attribute('type') == 'password'
     page.click('#credential-cancel')
     page.click('#open-data-directory')
-    page.click('[data-page=compare]')
+    page.click('[data-view=compare]')
     first = page.locator('.variant').first
     first.locator('.provider').select_option('local_indextts')
     buffer = io.BytesIO()
@@ -131,34 +132,38 @@ with sync_playwright() as p:
     assert first.locator('audio').get_attribute('src').startswith(api_origin + '/api/references/')
     assert any(method == 'POST' and path == '/api/references' and body == buffer.getvalue()
                for method, path, body in requests)
-    first.locator('.provider').select_option('demo')
-    for variant in page.locator('.variant').all():
-        variant.locator('.provider').select_option('demo')
-    page.click('#save-variants')
-    page.wait_for_function("() => document.querySelector('#save-state').textContent === '已保存到本机'")
-    page.click('[data-page=test]')
-    page.fill('#text', 'Tauri 桌面前端测试，只生成离线提示音。')
-    page.click('#test-generate')
-    page.wait_for_function("() => document.querySelectorAll('#test-results-slot audio').length === 1 && !document.querySelector('#test-generate').disabled")
-    audio = page.locator('#test-results-slot audio')
+    # Inject an offline fixture through the API, then open its inline history.
+    page.evaluate("""async () => {
+      const state = await (await fetch(window.ttsDesktop.apiUrl('/api/state'))).json();
+      await fetch(window.ttsDesktop.apiUrl('/api/batches'), {method:'POST',
+        headers:{'Content-Type':'application/json','X-Local-Token':state.token},
+        body:JSON.stringify({text:'Tauri offline audio fixture',variants:[{provider:'demo'}]})});
+    }""")
+    page.click('[data-view=test]')
+    page.locator('#history-panel').evaluate('(node) => { node.open = true; }')
+    page.wait_for_selector('.history-row')
+    page.locator('.history-row button').first.click()
+    page.wait_for_selector('#results audio')
+    audio = page.locator('#results audio')
     assert audio.get_attribute('src').startswith(api_origin + '/api/runs/')
     audio.evaluate('(node) => node.play()')
-    page.wait_for_function("() => document.querySelector('#test-results-slot audio').currentTime > 0")
+    page.wait_for_function("() => document.querySelector('#results audio').currentTime > 0")
     audio.evaluate('(node) => node.pause()')
     original_url = page.url
-    page.click('#test-results-slot .download')
-    page.click('#test-results-slot .download-batch')
-    page.click('#test-results-slot a[href="/api/export.csv"]')
+    page.click('#results .download')
+    page.click('#download-batch')
+    page.click('#exports a[href="/api/export.csv"]')
     page.wait_for_function("() => window.__NATIVE_CALLS__.filter(call => call[0] === 'save_export').length === 3")
     assert page.url == original_url
-    page.click('[data-page=compare]')
+    page.click('[data-view=compare]')
     first.locator('.provider').select_option('openai')
+    first.locator('.provider-info summary').click()
     first.locator('.doc-link').click()
     page.wait_for_function("() => window.__NATIVE_CALLS__.some(call => call[0] === 'open_documentation')")
     calls = page.evaluate('window.__NATIVE_CALLS__')
     assert any(command == 'open_documentation' and args['url'].startswith('https://') for command, args in calls)
     assert page.url == original_url
-    page.locator('.app-caption').dispatch_event('mousedown', {'button': 0, 'detail': 1})
+    page.locator('.brand').dispatch_event('mousedown', {'button': 0, 'detail': 1})
     page.wait_for_function("() => window.__NATIVE_CALLS__.some(call => call[1]?.action === 'startDragging')")
     calls = page.evaluate('window.__NATIVE_CALLS__')
     assert any(command == 'desktop_action' and args['action'] == 'startDragging' for command, args in calls)
@@ -173,7 +178,7 @@ with sync_playwright() as p:
     page.click('#download-app-update')
     page.wait_for_function("() => document.querySelector('#app-update-progress').value === 128")
     assert page.locator('#check-app-update').is_disabled()
-    assert not page.locator('#test-generate').is_disabled()
+    assert not page.locator('#generate').is_disabled()
     assert page.locator('#install-app-update').is_hidden()
     page.evaluate("window.__EMIT_UPDATE__({status: 'downloading', downloaded_bytes: 2048, total_bytes: 4096})")
     assert page.locator('#app-update-progress').get_attribute('value') == '2048'
@@ -191,16 +196,20 @@ with sync_playwright() as p:
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'install_update')")
     # Native state can become ready while generation is active. Even a scripted
     # click must not dispatch install until the active work finishes.
-    page.click('[data-page=test]')
+    page.click('[data-view=test]')
     hold_generations = True
-    page.click('#test-generate')
-    page.click('[data-page=models]')
+    page.locator('.provider').select_option('local_kokoro')
+    page.click('#generate')
+    page.click('[data-view=models]')
     assert page.locator('#install-app-update').is_disabled()
     assert '请等待' in page.locator('#app-update-install-hint').inner_text()
     page.locator('#install-app-update').dispatch_event('click')
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'install_update')")
     hold_generations = False
-    page.wait_for_function("() => !document.querySelector('#test-generate').disabled && !document.querySelector('#install-app-update').disabled")
+    for route, response, cors in held_routes:
+        route.fulfill(response=response, headers={**response.headers, **cors})
+    held_routes.clear()
+    page.wait_for_function("() => !document.querySelector('#generate').disabled && !document.querySelector('#install-app-update').disabled")
     page.evaluate("window.__EMIT_UPDATE__({status: 'error', error: '下载中断，请重试。'})")
     assert page.locator('#download-app-update').inner_text() == '重试下载'
     assert page.locator('#install-app-update').is_hidden()
@@ -228,23 +237,23 @@ with sync_playwright() as p:
     page.evaluate("window.__EMIT_UPDATE__({status: 'ready', distribution: 'portable'}); window.__INSTALL_BLOCKED__ = true")
     page.click('#install-app-update')
     page.wait_for_function("() => typeof window.__FAIL_INSTALL__ === 'function'")
-    assert page.locator('#test-generate').is_disabled() and page.locator('#compare-generate').is_disabled()
-    assert page.locator('#test-variant').is_disabled() and page.locator('#add-variant').is_disabled()
-    assert page.locator('#save-variants').is_disabled() and page.locator('#local-device').is_disabled()
+    assert page.locator('#generate').is_disabled()
+    assert page.locator('.preset').first.is_disabled() and page.locator('#add-variant').is_disabled()
+    assert page.locator('.save-preset').first.is_disabled() and page.locator('#local-device').is_disabled()
     assert page.locator('#cloud-services button:enabled').count() == 0
     assert page.locator('.variant input:enabled, .variant select:enabled, .variant button:enabled').count() == 0
     assert page.locator('#local-model-list button:enabled').count() == 0
     writes_before_install = len([request for request in requests if request[0] in {'POST', 'PUT', 'DELETE'}])
     # Script-dispatched clicks bypass the browser's disabled-button filtering;
     # the action guards must still stop work while the install helper starts.
-    page.locator('#test-generate').dispatch_event('click')
-    page.locator('#compare-generate').dispatch_event('click')
-    page.locator('#save-variants').dispatch_event('click')
+    page.locator('#generate').dispatch_event('click')
+    page.locator('#generate').dispatch_event('click')
+    page.locator('.save-preset').first.dispatch_event('click')
     page.locator('#local-model-list button').first.dispatch_event('click')
     assert len([request for request in requests if request[0] in {'POST', 'PUT', 'DELETE'}]) == writes_before_install
     page.evaluate('window.__FAIL_INSTALL__()')
     page.wait_for_function("() => document.querySelector('#app-update-status').textContent.includes('请等待模型安装')")
-    assert not page.locator('#test-generate').is_disabled() and not page.locator('#local-device').is_disabled()
+    assert not page.locator('#generate').is_disabled() and not page.locator('#local-device').is_disabled()
     assert not page.locator('#local-model-list button').first.is_disabled()
     assert page.locator('[data-model="glm-tts"] button').first.is_disabled()
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'desktop_action' && call[1]?.action === 'close')")
@@ -260,20 +269,20 @@ with sync_playwright() as p:
     # Daily startup checking is gated by the native production flag and a user
     # preference. Reloading within 24 hours never repeats the automatic check.
     page.evaluate("localStorage.setItem('test.updates.autoEnabled', '0'); localStorage.removeItem('ttsLab.updates.lastCheckAt'); localStorage.removeItem('ttsLab.updates.autoCheck')")
-    page.reload(); page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
+    page.reload(); page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'check_update')")
     page.evaluate("localStorage.setItem('test.updates.autoEnabled', '1'); localStorage.setItem('ttsLab.updates.autoCheck', '0')")
-    page.reload(); page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
+    page.reload(); page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'check_update')")
-    page.click('[data-page=models]')
+    page.click('[data-view=models]')
     assert not page.locator('#app-update-auto').is_checked()
     page.check('#app-update-auto')
-    page.reload(); page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
+    page.reload(); page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
     page.wait_for_function("() => window.__NATIVE_CALLS__.filter(call => call[0] === 'check_update').length === 1")
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => ['download_update', 'install_update'].includes(call[0]))")
-    page.reload(); page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
+    page.reload(); page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
     assert not page.evaluate("window.__NATIVE_CALLS__.some(call => call[0] === 'check_update')")
-    page.click('[data-page=models]')
+    page.click('[data-view=models]')
     page.click('#check-app-update')
     page.wait_for_function("() => window.__NATIVE_CALLS__.filter(call => call[0] === 'check_update').length === 1")
     assert not errors, errors

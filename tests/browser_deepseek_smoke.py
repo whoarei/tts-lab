@@ -109,71 +109,58 @@ def main():
                 page.on('request', lambda request: submissions.append(request.post_data_json)
                         if request.method == 'POST' and request.url.endswith('/api/batches') else None)
                 page.goto(origin)
-                page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
-                page.click('[data-page=compare]')
-                page.locator('#coverage-note summary').click()
-                assert page.locator('#coverage-note a[href="https://api-docs.deepseek.com/guides/tts/"]').count() == 1
-                assert '未找到可直接接入' not in page.locator('#coverage-note').inner_text()
+                page.wait_for_selector('.variant')
                 first = page.locator('.variant').first
                 first.locator('.provider').select_option('deepseek')
                 assert first.locator('[data-param=voice]').input_value() == 'stella'
                 assert first.locator('[data-param=filter_markdown]').is_checked()
                 assert first.locator('[data-param]').count() == 2 and first.locator('input[type=file]').count() == 0
-                first.locator('.variant-name').fill('DeepSeek tide · 保留 Markdown')
                 first.locator('[data-param=voice]').select_option('tide')
+                first.locator('.advanced summary').click()
                 first.locator('[data-param=filter_markdown]').uncheck()
-                first.locator('.clone-variant').click()
-                second = page.locator('.variant').nth(1)
-                second.locator('.variant-name').fill('DeepSeek stella · 过滤 Markdown')
-                second.locator('[data-param=voice]').select_option('stella')
-                second.locator('[data-param=filter_markdown]').check()
-                page.click('#save-variants')
-                page.wait_for_function("() => document.querySelector('#save-state').textContent === '已保存到本机'")
-                page.reload()
-                page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
-                page.click('[data-page=compare]')
+                page.click('.save-preset'); page.fill('#preset-name', 'DeepSeek tide · 保留 Markdown'); page.click('#confirm-save')
+                page.wait_for_selector('#save-dialog', state='hidden')
+                tide_id = page.locator('.preset').input_value()
+                first.locator('[data-param=voice]').select_option('stella')
+                first.locator('[data-param=filter_markdown]').check()
+                page.click('.save-as'); page.fill('#preset-name', 'DeepSeek stella · 过滤 Markdown'); page.click('#confirm-save')
+                page.wait_for_selector('#save-dialog', state='hidden')
+                stella_id = page.locator('.preset').input_value()
+                page.reload(); page.wait_for_selector('.variant')
+                page.locator('.preset').select_option(tide_id)
                 assert first.locator('[data-param=voice]').input_value() == 'tide'
                 assert not first.locator('[data-param=filter_markdown]').is_checked()
-                assert second.locator('[data-param=voice]').input_value() == 'stella'
-                assert second.locator('[data-param=filter_markdown]').is_checked()
-                page.click('[data-page=test]')
-                page.select_option('#test-variant', label='DeepSeek tide · 保留 Markdown')
-                page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
                 page.fill('#text', 'DeepSeek **Markdown** parameter UI test.')
-                assert page.locator('#test-consent-row').is_visible()
-                page.click('#test-generate')
-                page.wait_for_function("() => document.querySelector('#notice').textContent.includes('请先确认')")
-                assert not calls_file.exists(), 'No provider request is allowed without consent'
-                page.check('#test-cloud-consent')
-                page.click('#test-generate')
-                page.wait_for_function("() => document.querySelectorAll('#test-results-slot audio').length === 1 && !document.querySelector('#test-generate').disabled")
+                assert page.locator('#cloud-consent').count() == 0
+                page.click('#generate')
+                page.wait_for_function("() => document.querySelectorAll('#results audio').length === 1 && !document.querySelector('#generate').disabled")
                 assert submissions[-1]['variants'] == [{'provider': 'deepseek', 'params': {'voice': 'tide', 'filter_markdown': False}}]
                 assert submissions[-1]['allow_cloud'] is True
-                audio = page.locator('#test-results-slot audio')
-                audio.evaluate('(node) => node.play()')
-                page.wait_for_function("() => document.querySelector('#test-results-slot audio').currentTime > 0")
+                audio = page.locator('#results audio')
+                page.wait_for_function("() => document.querySelector('#results audio').currentTime > 0")
                 audio.evaluate('(node) => node.pause()')
                 with page.expect_download() as download:
-                    page.click('#test-results-slot .download')
+                    page.click('#results .download')
                 wav = output / 'tts-deepseek-mock.wav'
                 download.value.save_as(str(wav)); check_wav(wav.read_bytes())
                 with page.expect_download() as download:
-                    page.click('#test-results-slot .download-batch')
+                    page.click('#download-batch')
                 single = output / 'tts-deepseek-single.zip'
                 download.value.save_as(str(single)); check_zip(single, [('tide', False)])
-                page.click('[data-page=compare]')
-                page.check('#compare-cloud-consent')
-                page.click('#compare-generate')
-                page.wait_for_function("() => document.querySelectorAll('#compare-results-slot audio').length === 2 && !document.querySelector('#compare-generate').disabled")
+                page.click('[data-view=compare]')
+                page.locator('.variant .preset').first.select_option(tide_id)
+                page.locator('.variant .preset').nth(1).select_option(stella_id)
+                page.click('#generate')
+                page.wait_for_function("() => document.querySelectorAll('#results audio').length === 2 && !document.querySelector('#generate').disabled")
                 assert len(submissions[-1]['variants']) == 2 and submissions[-1]['allow_cloud'] is True
-                page.uncheck('#compare-results-slot .blind')
-                assert page.locator('#compare-results-slot .download').count() == 2
+                page.uncheck('#blind')
+                assert page.locator('#results .download').count() == 2
                 with page.expect_download() as download:
-                    page.click('#compare-results-slot .download-batch')
+                    page.click('#download-batch')
                 compare = output / 'tts-deepseek-compare.zip'
                 download.value.save_as(str(compare)); check_zip(compare, [('tide', False), ('stella', True)])
                 with page.expect_download() as download:
-                    page.click('#compare-results-slot a[href="/api/export.csv"]')
+                    page.click('#exports a[href="/api/export.csv"]')
                 csv_file = output / 'tts-deepseek-results.csv'
                 download.value.save_as(str(csv_file))
                 rows = list(csv.DictReader(io.StringIO(csv_file.read_text(encoding='utf-8-sig'))))
@@ -183,7 +170,7 @@ def main():
                 assert not errors, errors
                 page.screenshot(path=str(output / 'tts-deepseek-comparison.png'), full_page=True)
                 browser.close()
-                print('DeepSeek UI passed: two-field defaults, voice/checkbox changes, save/reload, consent, single and comparison generation, WAV playback/download, ZIP/CSV; 3 mocked PCM requests, no real cloud calls.')
+                print('DeepSeek UI passed: defaults, voice/checkbox changes, presets/reload, direct listening, automatic playback, WAV/ZIP/CSV; 3 mocked PCM requests, no real cloud calls.')
         finally:
             if process.poll() is None:
                 try:

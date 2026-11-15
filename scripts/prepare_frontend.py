@@ -11,7 +11,7 @@ def prepare():
         shutil.rmtree(target)
     (target / 'static').mkdir(parents=True)
     source = ROOT / 'tts_lab/static'
-    for name in ('index.html', 'app.js', 'desktop.js', 'style.css'):
+    for name in ('index.html', 'app.js', 'desktop.js', 'settings.js', 'icon.svg', 'style.css'):
         item = source / name
         if item.is_symlink() or not item.is_file():
             raise ValueError(f'Missing or unsafe frontend file: {name}')

@@ -51,8 +51,8 @@ with tempfile.TemporaryDirectory() as folder:
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 page.on('request', lambda req: batches.append(req.url) if req.url.endswith('/api/batches') else None)
                 page.goto(base)
-                page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
-                page.click('[data-page=models]')
+                page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
+                page.click('[data-view=models]')
                 assert page.locator('#edit-credentials, #restart-app').count() == 0
                 card = page.locator('[data-provider=deepseek]')
                 assert '已配置' in card.inner_text()
@@ -125,8 +125,8 @@ with tempfile.TemporaryDirectory() as folder:
                 assert page.locator('#credential-save').is_visible()
                 page.screenshot(path=str(output / 'tts-lab-credentials-narrow.png'))
                 page.click('#credential-close')
-                page.reload(); page.wait_for_function("() => !document.querySelector('#test-variant').disabled")
-                page.click('[data-page=models]'); card.click(); key.wait_for()
+                page.reload(); page.wait_for_function("() => !document.querySelector('.variant .provider')?.disabled !== false")
+                page.click('[data-view=models]'); card.click(); key.wait_for()
                 assert key.input_value() == ''
                 assert not errors, errors
                 assert not batches, 'Saving credentials must not submit synthesis requests'

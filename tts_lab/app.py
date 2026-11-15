@@ -120,6 +120,10 @@ class Score(BaseModel):
     notes: str = Field(default="", max_length=2000)
 
 
+class Preset(Variant):
+    name: str = Field(min_length=1, max_length=80)
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -198,7 +202,7 @@ async def generate(run: dict):
 
 @app.get("/api/state")
 def state():
-    return {"token": TOKEN, "providers": public_catalog(), "references": reference_audio.list_references(), "version": "0.8.1", "desktop": DESKTOP}
+    return {"token": TOKEN, "providers": public_catalog(), "references": reference_audio.list_references(), "version": "0.9.0", "desktop": DESKTOP}
 
 
 @app.get('/api/activity')
@@ -305,6 +309,75 @@ def save_variants(configuration: VariantConfiguration):
         if temporary is not None:
             temporary.unlink(missing_ok=True)
     return payload
+
+
+def preset_path(preset_id: str) -> Path:
+    if not ID.fullmatch(preset_id):
+        raise HTTPException(404, "找不到方案。")
+    return DATA_DIR / "presets" / (preset_id + ".json")
+
+
+@app.get("/api/presets")
+def list_presets():
+    migrate_legacy_presets()
+    presets = []
+    for file in (DATA_DIR / "presets").glob("*.json"):
+        try:
+            item = json.loads(file.read_text("utf-8"))
+            Preset.model_validate({k: item[k] for k in ("name", "provider", "params")})
+            if (ID.fullmatch(item["id"]) and item["id"] == file.stem
+                    and isinstance(item["updated_at"], str)):
+                presets.append(item)
+        except (ValueError, KeyError, TypeError, OSError):
+            continue
+    return {"presets": sorted(presets, key=lambda p: p["updated_at"], reverse=True)}
+
+
+def write_preset(preset_id: str, preset: Preset) -> dict:
+    name = preset.name.strip()
+    if not name or any(ord(c) < 32 for c in name):
+        raise HTTPException(422, "请输入有效的方案名称。")
+    if preset.provider == "demo":
+        raise HTTPException(422, "提示音不能保存为语音方案。")
+    try:
+        params = validate_params(preset.provider, preset.params)
+    except (ValueError, ProviderError) as exc:
+        raise HTTPException(422, str(exc)) from None
+    item = {"id": preset_id, "name": name, "provider": preset.provider,
+            "params": safe_params(params), "updated_at": now()}
+    path = preset_path(preset_id)
+    path.parent.mkdir(exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(item, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+    return item
+
+
+def migrate_legacy_presets():
+    # Keep variants.json intact for older installations. Stable IDs make the
+    # upgrade idempotent and never overwrite edits made in the new editor.
+    for variant in get_variants()['variants']:
+        if variant['provider'] == 'demo':
+            continue
+        preset_id = uuid.uuid5(uuid.NAMESPACE_URL, 'tts-lab-variant:' + variant['uid']).hex
+        if preset_path(preset_id).exists():
+            continue
+        try:
+            write_preset(preset_id, Preset(name=variant['name'], provider=variant['provider'], params=variant['params']))
+        except HTTPException:
+            continue
+
+
+@app.post("/api/presets", status_code=201)
+async def create_preset(preset: Preset):
+    return write_preset(uuid.uuid4().hex, preset)
+
+
+@app.put("/api/presets/{preset_id}")
+async def update_preset(preset_id: str, preset: Preset):
+    if not preset_path(preset_id).is_file():
+        raise HTTPException(404, "找不到方案。")
+    return write_preset(preset_id, preset)
 
 
 @app.post("/api/batches", status_code=202)
